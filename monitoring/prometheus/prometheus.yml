@@ -1,0 +1,45 @@
+# Prometheus 抓取配置 —— 智能客服 Agent（Smart Service Agent）
+#
+# 抓取目标：服务端暴露的 /api/admin/metrics/prometheus
+# 鉴权：服务端配置了 PROMETHEUS_TOKEN 时，需要 Bearer 静态令牌（见下方 authorization）。
+#       该令牌在服务端启动时通过环境变量 PROMETHEUS_TOKEN 设置，Prometheus 通过
+#       ${PROMETHEUS_TOKEN} 环境变量注入（Prometheus 原生支持 ${VAR} 配置变量替换）。
+#
+# 部署说明：
+#   - 典型用法（监控栈跑在容器，应用跑在宿主机）：targets 用 host.docker.internal:3000
+#     （Docker Desktop 内置别名，指向宿主机）；Linux 无该别名时改用宿主机网关 IP
+#     （如 172.17.0.1:3000），或用 APP_SCRAPE_TARGET 环境变量覆盖。
+#   - 若把应用也放进同一 compose 网络（服务名 smart-service-agent），可设
+#     APP_SCRAPE_TARGET=smart-service-agent:3000。
+#   - 本机裸跑 Prometheus：targets 改成 ['localhost:3000']。
+#   - ${PROMETHEUS_TOKEN} / ${APP_SCRAPE_TARGET} 由 Prometheus 进程环境变量替换
+#     （docker-compose 已透传；裸跑时用 env 注入）。
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: smart-service-agent-monitor
+
+rule_files:
+  - /etc/prometheus/alert.rules.yml
+
+# 告警发往 Alertmanager（同 compose 网络内服务名 alertmanager:9093）
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  - job_name: smart-service-agent
+    metrics_path: /api/admin/metrics/prometheus
+    scheme: http
+    # 与服务端 PROMETHEUS_TOKEN 保持一致；缺失时服务端回退为管理员 JWT（需手动登录，不适合自动抓取）
+    authorization:
+      type: Bearer
+      credentials: ${PROMETHEUS_TOKEN}
+    static_configs:
+      - targets:
+          - '${APP_SCRAPE_TARGET:-host.docker.internal:3000}'
+        labels:
+          env: production

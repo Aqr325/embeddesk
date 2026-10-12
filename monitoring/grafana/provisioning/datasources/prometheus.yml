@@ -1,0 +1,15 @@
+apiVersion: 1
+
+# Grafana 数据源：指向 Prometheus。uid 固定为 "prom"，
+# 与 dashboard JSON 中的 datasource.uid 保持一致。
+datasources:
+  - name: SmartServiceAgent
+    uid: prom
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s

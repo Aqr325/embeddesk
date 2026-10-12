@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# 自动加载本目录下的 *-dashboard.json / *.json 仪表盘
+providers:
+  - name: smart-service-agent
+    orgId: 1
+    folder: 'Smart Service Agent'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

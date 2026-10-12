@@ -1,0 +1,36 @@
+# 依赖
+node_modules/
+.pnp/
+.pnp.js
+
+# 构建产物
+dist/
+dist_bak/
+.trash/
+
+# 运行时数据（含客户 PII：会话 / 邮箱 / CSAT 评价）
+data/
+logs/
+server.log
+nul
+
+# 环境变量 / 密钥（切勿提交；.env.example 例外，作为模板保留）
+.env
+.env.*
+!.env.example
+
+# 编辑器 / 系统
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# 测试 / 压测产物
+token.txt
+stats.json
+
+# Agent 工作区记忆（勿入库）
+.workbuddy/
+
+# Vite 临时文件
+*.timestamp-*.mjs

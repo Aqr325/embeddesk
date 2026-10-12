@@ -1,0 +1,75 @@
+# Prometheus 告警规则 —— 智能客服 Agent
+#
+# 触发前提：Prometheus 已按 prometheus.yml 抓取到 csa_email_* / csa_csat_* 等业务指标。
+# 告警通过 Prometheus Alertmanager 或 Grafana 统一接收；本文件同时可被 Grafana 的
+# "Prometheus" 数据源「Alerting」复用（在 Grafana 中导入同表达式即可）。
+#
+# 指标语义速查：
+#   csa_email_send_error_rate       邮件投递错误率 (0..1)
+#   csa_email_send_latency_avg_seconds  邮件平均投递延迟 (秒)
+#   csa_email_send_total{status}    邮件发送量（成功/失败，按 type 拆分）
+#   csa_csat_response_rate          CSAT 问卷回收率 (0..1)
+#   up{job="smart-service-agent"}   Prometheus 合成指标，服务不可达时为 0
+
+groups:
+  - name: smart-service-agent-alerts
+    rules:
+      - alert: EmailErrorRateHigh
+        expr: csa_email_send_error_rate > 0.2
+        for: 5m
+        labels:
+          severity: critical
+          team: support-platform
+        annotations:
+          summary: "邮件投递错误率过高 ({{ $value | humanizePercentage }})"
+          description: >-
+            邮件投递错误率持续 5 分钟超过 20%（当前 {{ $value | humanizePercentage }}）。
+            可能原因：SMTP 凭证失效、邮件服务限流/封禁、网络抖动。请检查 EMAIL_SMTP_* 配置与投递指标。
+
+      - alert: EmailLatencyHigh
+        expr: csa_email_send_latency_avg_seconds > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: support-platform
+        annotations:
+          summary: "邮件投递延迟偏高 ({{ $value }}s)"
+          description: >-
+            邮件平均投递延迟持续 5 分钟超过 5 秒（当前 {{ $value }}s）。
+            可能影响 CSAT 问卷及时送达，请检查 SMTP 服务与网络链路。
+
+      - alert: EmailRetriesSustained
+        expr: rate(csa_email_send_retries_total[10m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: support-platform
+        annotations:
+          summary: "邮件投递重试频繁"
+          description: >-
+            近 10 分钟邮件投递重试率偏高（{{ $value | humanize }}/s），说明存在持续性瞬时可恢复错误。
+            建议排查 SMTP 服务端稳定性与超时/重试参数（EMAIL_SMTP_TIMEOUT_MS / MAX_RETRIES）。
+
+      - alert: CsatResponseRateLow
+        expr: csa_csat_response_rate < 0.3
+        for: 10m
+        labels:
+          severity: warning
+          team: cx-quality
+        annotations:
+          summary: "CSAT 问卷回收率偏低 ({{ $value | humanizePercentage }})"
+          description: >-
+            CSAT 问卷回收率持续 10 分钟低于 30%（当前 {{ $value | humanizePercentage }}）。
+            请核实用问卷邮件是否正常送达、问卷链接是否可访问、触发派发逻辑是否覆盖主要工单。
+
+      - alert: ServiceUnreachable
+        expr: up{job="smart-service-agent"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: support-platform
+        annotations:
+          summary: "客服服务不可达 (up=0)"
+          description: >-
+            Prometheus 无法抓取 smart-service-agent 指标（up=0）持续 2 分钟。
+            服务可能已宕机或端口/令牌配置错误，请立即检查进程与 PROMETHEUS_TOKEN。

@@ -1,0 +1,96 @@
+# 一键拉起 Prometheus + Alertmanager + 告警中继 + Grafana 监控栈。
+#
+# 用法：
+#   cd monitoring
+#   export PROMETHEUS_TOKEN=<与服务端一致的静态令牌>
+#   export ALERT_EMAIL=ops@example.com                 # 接收告警邮件的邮箱（必填才会发邮件）
+#   export QIDIAN_WEBHOOK_URL=https://qidian.xxx/webhook/xxxx   # 腾讯企点机器人 webhook（可选）
+#   export QIDIAN_MENTION=13800001111                  # 企点消息 @ 成员（可选）
+#   export GRAFANA_PASSWORD=admin
+#   export EMAIL_SMTP_HOST/USER/PASS/FROM ...          # 告警邮件的 SMTP 凭证（与 CSAT 共用）
+#   docker compose up -d
+#
+# 访问：
+#   - Grafana:      http://localhost:3001
+#   - Prometheus:   http://localhost:9090
+#   - Alertmanager: http://localhost:9093
+#   - 告警中继:      http://localhost:9099/health
+#
+# 注意：
+#   - 抓取目标默认 host.docker.internal:3000（监控栈在容器内、应用跑在宿主机）。
+#     若应用也容器化（服务名 smart-service-agent），设 APP_SCRAPE_TARGET=smart-service-agent:3000。
+#     Linux 无 host.docker.internal 别名时，改 APP_SCRAPE_TARGET=172.17.0.1:3000（宿主机网关）。
+#   - 服务端需以相同 PROMETHEUS_TOKEN 启动，否则抓取返回 401。
+#   - 仅配置 ALERT_EMAIL 也会发邮件；仅配置 QIDIAN_WEBHOOK_URL 也仅发企点；两者都配则双发。
+#   - alert-relay 用 node:22-alpine 运行 scripts/alert-relay.mjs（已挂载项目目录，复用 nodemailer）。
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ssa-prometheus
+    ports:
+      - "9090:9090"
+    environment:
+      PROMETHEUS_TOKEN: ${PROMETHEUS_TOKEN:-changeme}
+      APP_SCRAPE_TARGET: ${APP_SCRAPE_TARGET:-host.docker.internal:3000}
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+    restart: unless-stopped
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: ssa-alertmanager
+    ports:
+      - "9093:9093"
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    restart: unless-stopped
+
+  alert-relay:
+    image: node:22-alpine
+    container_name: ssa-alert-relay
+    working_dir: /app
+    command: ["node", "scripts/alert-relay.mjs"]
+    ports:
+      - "9099:9099"
+    environment:
+      ALERT_RELAY_PORT: 9099
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      QIDIAN_WEBHOOK_URL: ${QIDIAN_WEBHOOK_URL:-}
+      QIDIAN_MSG_TYPE: ${QIDIAN_MSG_TYPE:-markdown}
+      QIDIAN_MENTION: ${QIDIAN_MENTION:-}
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-}
+      EMAIL_SMTP_SECURE: ${EMAIL_SMTP_SECURE:-}
+      EMAIL_SMTP_USER: ${EMAIL_SMTP_USER:-}
+      EMAIL_SMTP_PASS: ${EMAIL_SMTP_PASS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+    volumes:
+      - ./:/app
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ssa-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - alertmanager
+    restart: unless-stopped

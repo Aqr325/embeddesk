@@ -1,0 +1,170 @@
+{
+  "title": "智能客服 Agent · 邮件投递与 CSAT 监控",
+  "uid": "smart-service-agent",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prom" },
+        "query": "label_values(up, job)",
+        "current": { "text": "smart-service-agent", "value": "smart-service-agent" },
+        "includeAll": false,
+        "refresh": 2
+      }
+    ]
+  },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "title": "邮件发送量（按状态）",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "description": "csa_email_send_total 的每秒速率，按 status=success|failure 拆分",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "lines", "fillOpacity": 10, "lineWidth": 2 }, "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(csa_email_send_total[5m])) by (status)", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "邮件投递成功率",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "description": "csa_email_send_success_rate (0..1)",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": 0 }, { "color": "yellow", "value": 0.8 }, { "color": "green", "value": 0.95 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [ { "refId": "A", "expr": "csa_email_send_success_rate" } ]
+    },
+    {
+      "id": 3,
+      "title": "邮件投递错误率",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "description": "csa_email_send_error_rate (0..1)，>0.2 触发 critical 告警",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 0.1 }, { "color": "red", "value": 0.2 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [ { "refId": "A", "expr": "csa_email_send_error_rate" } ]
+    },
+    {
+      "id": 4,
+      "title": "邮件平均投递延迟",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "description": "csa_email_send_latency_avg_seconds，>5s 触发 warning 告警",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "lines", "fillOpacity": 10, "lineWidth": 2 }, "unit": "s" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "csa_email_send_latency_avg_seconds", "legendFormat": "avg" } ]
+    },
+    {
+      "id": 5,
+      "title": "邮件投递重试率",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "description": "rate(csa_email_send_retries_total[5m])，持续偏高说明 SMTP 端瞬时可恢复错误",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "lines", "fillOpacity": 10, "lineWidth": 2 }, "unit": "ops" }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "rate(csa_email_send_retries_total[5m])", "legendFormat": "retries/s" } ]
+    },
+    {
+      "id": 6,
+      "title": "CSAT 派发 vs 回收",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "description": "csa_csat_surveys_total（派发）与 csa_csat_responses_total（回收）",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "lines", "fillOpacity": 8, "lineWidth": 2 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "csa_csat_surveys_total", "legendFormat": "派发" },
+        { "refId": "B", "expr": "csa_csat_responses_total", "legendFormat": "回收" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "CSAT 回收率",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 16 },
+      "description": "csa_csat_response_rate (0..1)，<0.3 持续 10m 触发 warning",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": 0 }, { "color": "yellow", "value": 0.3 }, { "color": "green", "value": 0.6 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [ { "refId": "A", "expr": "csa_csat_response_rate" } ]
+    },
+    {
+      "id": 8,
+      "title": "CSAT 平均分",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 16 },
+      "description": "csa_csat_avg_rating (1..5)",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "",
+          "min": 1,
+          "max": 5,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": 1 }, { "color": "yellow", "value": 3 }, { "color": "green", "value": 4 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [ { "refId": "A", "expr": "csa_csat_avg_rating" } ]
+    },
+    {
+      "id": 9,
+      "title": "工单状态分布",
+      "type": "barchart",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "description": "csa_tickets_total 按 status 拆分",
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2 } }, "overrides": [] },
+      "targets": [ { "refId": "A", "expr": "csa_tickets_total", "legendFormat": "{{status}}" } ]
+    },
+    {
+      "id": 10,
+      "title": "服务可用性 (up)",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prom" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "description": "up{job=\"smart-service-agent\"}，=0 持续 2m 触发 critical（服务不可达）",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } } ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": 0 }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [ { "refId": "A", "expr": "up{job=\"smart-service-agent\"}" } ]
+    }
+  ]
+}

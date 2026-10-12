@@ -1,0 +1,35 @@
+# Alertmanager 配置 —— 智能客服 Agent（Smart Service Agent）
+#
+# 职责：接收 Prometheus 评估出的告警（见 ../prometheus/alert.rules.yml），
+# 转发给 alert-relay 中继服务；由 relay 再分流到：
+#   - 邮件（SMTP，复用服务端 EMAIL_SMTP_* 凭证，发给 ALERT_EMAIL）
+#   - 腾讯企点（webhook，QIDIAN_WEBHOOK_URL）
+#
+# 部署：
+#   - docker 场景：webhook url 用服务名 alert-relay:9099/webhook（同 compose 网络）。
+#   - 裸跑场景：把 url 改成 http://localhost:9099/webhook（relay 监听 ALERT_RELAY_PORT）。
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'relay'
+  # 同 alertname/severity/team 的告警聚合为一组，避免风暴
+  group_by: ['alertname', 'severity', 'team']
+  group_wait: 30s        # 组内首条告警等待 30s 凑批
+  group_interval: 5m     # 同组再次通知间隔
+  repeat_interval: 4h    # 持续未恢复时重复提醒间隔
+
+receivers:
+  - name: 'relay'
+    webhook_configs:
+      - url: 'http://alert-relay:9099/webhook'
+        send_resolved: true   # 告警恢复时也回调 relay，发送「已恢复」通知
+
+# 抑制：同 alertname/team 下，critical 级存在时抑制 warning 级，减少噪声
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'team']
