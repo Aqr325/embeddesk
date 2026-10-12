@@ -1,0 +1,12 @@
+node_modules
+dist
+data
+logs
+.git
+.workbuddy
+*.log
+.env
+.env.*
+!.env.example
+*.timestamp-*.mjs
+.DS_Store
