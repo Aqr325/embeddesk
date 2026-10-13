@@ -22,6 +22,7 @@ import * as db from './db.js';
 import { classifyIntent, isNegativeSentiment, INTENT_META, type IntentId, extractIntents, isSmallTalk } from './intent.js';
 import { seedKnowledgeBase, DIRECT_ANSWER_THRESHOLD, HIT_THRESHOLD, getKbCacheStats, type FaqHit, recommendFaqs } from './knowledge.js';
 import { retrieveRag, buildRagContext, getRagStats } from './rag.js';
+import { geminiConfigured } from './geminiAgent.js';
 import { getCopilotSuggestions } from './copilot.js';
 import { evaluateHandoff, buildHandoffMessage, detectAgentSignal, stripHandoffToken, HANDOFF_TOKEN, type HandoffDecision } from './handoff.js';
 import { computePriority, computeSlaDue, assignTicket } from './tickets.js';
@@ -440,7 +441,8 @@ async function runChatPipeline(
     }
 
     /* ---- ⑤ Agent 生成（带模型兜底） ---- */
-    const useSdk = (await probeSdk()) && !isSdkBroken();
+    // Hack2skill（方案 §4 契约1）：Gemini 引擎就绪时不受 tencent SDK 可用性约束
+    const useSdk = geminiConfigured() || ((await probeSdk()) && !isSdkBroken());
     const knowledgeContext = buildRagContext(faqHits);
     const customerProfileText = session.customer_id ? formatCustomerProfile(db.getCustomerProfile(session.customer_id)) : null;
     const llmCfg = getResolvedConfig();
@@ -455,10 +457,11 @@ async function runChatPipeline(
 
     if (useSdk) {
       const requestedModel = model || session.model || llmCfg.model;
-      // 尝试顺序：请求模型 → 配置模型 → 已知可用模型；过滤已确认不可用的
-      const MODEL_TRY_ORDER = Array.from(
-        new Set([requestedModel, llmCfg.model, ...KNOWN_SUPPORTED_MODELS]),
-      ).filter((m) => !badModels.has(m));
+      // 尝试顺序：请求模型 → 配置模型 → 已知可用模型；过滤已确认不可用的。
+      // Gemini 引擎例外：模型由 getGeminiConfig()（GEMINI_MODEL env 覆盖）决定，单次调用不进 tencent 候选链。
+      const MODEL_TRY_ORDER = geminiConfigured()
+        ? [process.env.GEMINI_MODEL || 'gemini-2.5-flash']
+        : Array.from(new Set([requestedModel, llmCfg.model, ...KNOWN_SUPPORTED_MODELS])).filter((m) => !badModels.has(m));
       let full = '';
       let usedModel = '';
       let agentError: unknown = null;

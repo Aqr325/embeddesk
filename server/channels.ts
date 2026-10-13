@@ -44,6 +44,7 @@ import {
   AGENT_FIRST_TOKEN_TIMEOUT,
   buildHistoryText,
 } from './agentCore.js';
+import { geminiConfigured } from './geminiAgent.js';
 import { summarizeConversation } from './summarize.js';
 import { analyzeSentiment } from './sentiment.js';
 import { escalateFromContext, higherPriority, notifyEscalation } from './escalation.js';
@@ -332,7 +333,8 @@ export async function ingestExternalMessage(input: IngestInput): Promise<IngestR
     const ORDER_CTX_TIMEOUT_MS = 3000;
 
     /* ---- AI 化：调用 LLM Agent 生成回复（带领域工具：知识检索 / 订单 / 画像 / 建单）---- */
-    const useSdk = (await probeSdk()) && !isSdkBroken();
+    // Hack2skill（方案 §4 契约1）：Gemini 引擎就绪时不受 tencent SDK 可用性约束
+    const useSdk = geminiConfigured() || ((await probeSdk()) && !isSdkBroken());
     if (useSdk) {
       try {
         const knowledgeContext = buildRagContext(faqHits);

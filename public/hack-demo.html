@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>中科佳晨 · 无人机反制设备 | EmbedDesk 测试页</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #1f2937; }
+    .nav { background: #0f172a; color: #fff; padding: 14px 32px; display: flex; align-items: center; gap: 24px; }
+    .nav .logo { font-weight: 700; font-size: 18px; letter-spacing: 1px; }
+    .nav .logo span { color: #60a5fa; }
+    .nav .links { margin-left: auto; display: flex; gap: 20px; font-size: 14px; opacity: .85; }
+    .hero { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); color: #fff; padding: 64px 32px; text-align: center; }
+    .hero h1 { font-size: 32px; margin-bottom: 12px; }
+    .hero p { opacity: .8; font-size: 15px; max-width: 640px; margin: 0 auto; line-height: 1.7; }
+    .hero .tagline { margin-top: 20px; display: inline-block; background: rgba(96,165,250,.18); border: 1px solid rgba(96,165,250,.5); color: #bfdbfe; padding: 6px 16px; border-radius: 999px; font-size: 13px; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px; }
+    .section-title { font-size: 20px; font-weight: 700; margin: 32px 0 16px; display: flex; align-items: center; gap: 10px; }
+    .section-title::before { content: ""; width: 4px; height: 18px; background: #1e3a8a; border-radius: 2px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; transition: box-shadow .2s; }
+    .card:hover { box-shadow: 0 8px 24px rgba(15,23,42,.08); }
+    .card h3 { font-size: 16px; margin-bottom: 8px; }
+    .card .meta { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+    .card p { font-size: 13px; color: #4b5563; line-height: 1.7; }
+    .card .params { margin-top: 10px; font-size: 12px; color: #1e3a8a; background: #eff6ff; border-radius: 8px; padding: 8px 10px; line-height: 1.8; }
+    .snippet { background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 20px 24px; font-family: Consolas, monospace; font-size: 13px; line-height: 1.9; overflow-x: auto; }
+    .snippet .k { color: #7dd3fc; }
+    .snippet .s { color: #86efac; }
+    .snippet .c { color: #64748b; }
+    .setup { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; padding: 20px 24px; margin: 24px 0; font-size: 14px; line-height: 2; }
+    .setup code { background: #fef3c7; padding: 2px 8px; border-radius: 6px; font-family: Consolas, monospace; }
+    .setup input { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; font-size: 13px; width: 280px; margin-right: 8px; }
+    .setup button { background: #1e3a8a; color: #fff; border: none; border-radius: 8px; padding: 9px 20px; font-size: 13px; cursor: pointer; }
+    .setup button:hover { background: #1d4ed8; }
+    .hint { margin-top: 12px; font-size: 13px; color: #92400e; }
+    footer { text-align: center; color: #9ca3af; font-size: 12px; padding: 24px; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="logo">中科佳晨 <span>SZJAMMER</span></div>
+    <div class="links"><span>产品中心</span><span>解决方案</span><span>关于我们</span></div>
+  </nav>
+
+  <header class="hero">
+    <h1>低空安防 · 无人机反制设备</h1>
+    <p>便携式干扰 / 固定站 / 侦测一体化方案，覆盖军营、监狱、机场、大型活动等场景。18 款设备，参数复杂、选型专业——试试右下角客服，问它「便携式干扰设备的有效距离和频段？」</p>
+    <div class="tagline">EmbedDesk 嵌入式 AI 客服 · 一行代码接入测试页</div>
+  </header>
+
+  <main class="wrap">
+    <div class="setup" id="setupPanel" style="display:none">
+      <strong>首次使用：请先配置接入参数</strong><br />
+      1. 打开管理后台 → <code>站点管理</code> → 新建站点（域名随意，如 szjammer.com）<br />
+      2. 复制建站返回的 <code>site-id</code> 与 <code>token</code>，填入下方（保存在本机 localStorage）：<br />
+      <div style="margin-top:10px">
+        <input id="inpSite" placeholder="site-id，如 site_xxxx" />
+        <input id="inpToken" placeholder="token" />
+        <button id="btnSave">保存并启用客服</button>
+      </div>
+      <div class="hint">后端地址默认取本页所在域（同源部署）；跨域部署时用 URL 参数指定：<code>?server=https://你的后端&amp;site=...&amp;token=...</code></div>
+    </div>
+
+    <h2 class="section-title">产品中心</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>JAMMER-P30 便携式干扰设备</h3>
+        <div class="meta">手持 · 2.4G/5.8G/GPS/GLONASS</div>
+        <p>单兵便携设计，重量 1.8kg，持续干扰时间 2.5 小时，适用于突发黑飞事件快速处置。</p>
+        <div class="params">有效距离 1.5km ｜ 频段 2.4G/5.8G/GPS L1 ｜ 电池可热插拔</div>
+      </div>
+      <div class="card">
+        <h3>JAMMER-S100 固定站干扰系统</h3>
+        <div class="meta">固定部署 · 全向/定向可选</div>
+        <p>监狱、看守所周界防护，7×24 小时无人值守，支持网管平台统一监控。</p>
+        <div class="params">有效距离 3km ｜ 覆盖 360° ｜ IP65 防护</div>
+      </div>
+      <div class="card">
+        <h3>DETECT-A10 侦测一体机</h3>
+        <div class="meta">频谱侦测 + 远程识别</div>
+        <p>2km 范围内无人机侦测、型号识别与飞行轨迹跟踪，支持 Remote ID 解析。</p>
+        <div class="params">侦测距离 2km ｜ 定位精度 &lt;10m ｜ 同时跟踪 50 批</div>
+      </div>
+    </div>
+
+    <h2 class="section-title">一行代码接入（Demo 技术位）</h2>
+    <div class="snippet">
+<span class="c">&lt;!-- 任意第三方网站，粘贴即用 --&gt;</span><br />
+&lt;<span class="k">script</span> <span class="s">src</span>=<span class="s">"https://你的后端域名/embed.js"</span><br />
+&nbsp;&nbsp;<span class="s">data-site-id</span>=<span class="s">"site_xxxxxxxx"</span><br />
+&nbsp;&nbsp;<span class="s">data-token</span>=<span class="s">"嵌入站点令牌"</span><br />
+&nbsp;&nbsp;<span class="s">data-server</span>=<span class="s">"https://你的后端域名"</span><br />
+&nbsp;&nbsp;<span class="s">data-title</span>=<span class="s">"在线客服"</span>&gt;&lt;/<span class="k">script</span>&gt;
+    </div>
+  </main>
+
+  <footer>© 2026 中科佳晨 · 本页为 EmbedDesk（云嵌）Demo 测试页，产品参数为真实资料，运营数据为演示数据</footer>
+
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var server = q.get('server') || location.origin;
+      var site = q.get('site') || localStorage.getItem('embeddesk_site') || '';
+      var token = q.get('token') || localStorage.getItem('embeddesk_token') || '';
+      var panel = document.getElementById('setupPanel');
+      if (!site || !token) {
+        panel.style.display = 'block';
+        document.getElementById('btnSave').onclick = function () {
+          var s = document.getElementById('inpSite').value.trim();
+          var t = document.getElementById('inpToken').value.trim();
+          if (!s || !t) { alert('site-id 与 token 均需填写'); return; }
+          localStorage.setItem('embeddesk_site', s);
+          localStorage.setItem('embeddesk_token', t);
+          location.reload();
+        };
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = server + '/embed.js';
+      s.setAttribute('data-site-id', site);
+      s.setAttribute('data-token', token);
+      s.setAttribute('data-server', server);
+      s.setAttribute('data-title', '在线客服');
+      s.setAttribute('data-color', '#1e3a8a');
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

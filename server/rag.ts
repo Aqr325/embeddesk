@@ -16,6 +16,8 @@
 import * as db from './db.js';
 import { normalize } from './nlp.js';
 import { retrieveFaqs, type FaqHit } from './knowledge.js';
+import { retrieveVertex, vertexConfigured } from './vertexSearch.js';
+import { logger } from './logger.js';
 
 /* ============================ ① 同义词 / 口语扩展 ============================ */
 
@@ -146,6 +148,7 @@ let ragSemantic = 0;
 
 export function getRagStats(): {
   enabled: boolean;
+  provider: string;
   semantic: boolean;
   retrievals: number;
   expanded: number;
@@ -153,6 +156,7 @@ export function getRagStats(): {
 } {
   return {
     enabled: true,
+    provider: vertexConfigured() ? 'vertex' : 'lexical',
     semantic: embeddingConfigured(),
     retrievals: ragRetrievals,
     expanded: ragExpanded,
@@ -176,6 +180,17 @@ export async function retrieveRag(
   const useExpand = opts.expand !== false;
   const { expanded, added, changed } = useExpand ? expandQuery(query) : { expanded: query, added: [], changed: false };
   if (changed) ragExpanded++;
+
+  // Hack2skill（改装方案 §3/§10）：KNOWLEDGE_PROVIDER=vertex 时优先 Vertex AI Search；
+  // 调用失败自动回退下方 lexical 通路（同签名降级，一行开关可整体切回）。
+  if (vertexConfigured()) {
+    try {
+      const vertexHits = await retrieveVertex(expanded, (intent as any) || null, topK);
+      return vertexHits; // vertex 为空视为权威「无匹配」，不叠加 lexical 噪声
+    } catch {
+      /* 已由 vertexSearch 记日志与错误计数，此处静默回退 lexical */
+    }
+  }
 
   // lexical 召回（用扩展后的 query，多取候选供融合/重排）
   const lexical = retrieveFaqs(expanded, (intent as any) || null, topK * 2);

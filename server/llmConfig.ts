@@ -72,6 +72,20 @@ export function clampMaxReply(n: number): number {
   return Math.min(MAX_REPLY_MAX, Math.max(MAX_REPLY_MIN, Math.round(n)));
 }
 
+/**
+ * Hack2skill 赛用（AI-Builder-Cup 改装方案 §3）：Gemini 引擎的 env 覆盖配置。
+ * 优先级：env（GEMINI_MODEL / GEMINI_TEMPERATURE / GEMINI_SYSTEM_PROMPT）> DB 配置。
+ * 仅 server/geminiAgent.ts 消费，不影响 tencent SDK 路径的 getResolvedConfig 行为。
+ */
+export function getGeminiConfig(): { model: string; temperature: number; systemPrompt: string } {
+  const c = getResolvedConfig();
+  const model = (process.env.GEMINI_MODEL || '').trim() || 'gemini-2.5-flash';
+  const tempEnv = (process.env.GEMINI_TEMPERATURE || '').trim();
+  const temperature = tempEnv !== '' ? clampTemp(Number(tempEnv)) : clampTemp(c.temperature);
+  const systemPrompt = (process.env.GEMINI_SYSTEM_PROMPT || '').trim() || c.basePrompt;
+  return { model, temperature, systemPrompt };
+}
+
 /** 对外脱敏：永不返回明文 apiKey */
 export function toPublicConfig(c: ResolvedLlmConfig) {
   return {
