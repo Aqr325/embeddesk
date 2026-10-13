@@ -103,6 +103,7 @@ const server = createServer((req, res) => {
 
     if (url.pathname === '/__control') {
       if (body.scenario) scenario = body.scenario;
+      if (body.resetDocs) { DOCS.length = 0; console.log('[mock] DOCS 已重置（回退 CANNED_DOCS）'); }
       console.log(`[mock] scenario -> ${scenario}`);
       return json(res, 200, { scenario });
     }

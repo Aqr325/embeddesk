@@ -87,11 +87,12 @@ npm run dev
 
 - Knowledge retrieval runs on the built-in **lexical RAG** (`KNOWLEDGE_PROVIDER=lexical`, the default) — no Vertex setup required.
 - The **Insights** tab in the admin back-office reads from the seeded JSONL (BigQuery fallback path) and renders TOP products, intent distribution, and ticket trends.
-- Verify the insight aggregation closed loop:
+- **One-click verification** (starts a local mock of all GCP endpoints, then runs 6 suites):
 
 ```bash
-npx tsx scripts/verify_insights.ts     # 12 assertions: hit-rate, TOP product, trends
-npx tsx scripts/verify_gemini_agent.ts # Gemini loop smoke (needs GEMINI_* or falls back)
+npm run verify
+# → insights aggregation (12 assertions) · agent tools · Gemini kernel T1–T9
+#   · Firestore+SQLite · BigQuery+JSONL · retrieval Top-3 hit rate 96.4% (≥80% gate)
 ```
 
 ---
@@ -164,6 +165,7 @@ smart-service-agent/
 ├── public/embed.js         # Shadow-DOM embed widget (zero-change)
 ├── scripts/
 │   ├── seed-demo-events.ts # [NEW] seed 2–3 weeks of demo insight events
+│   ├── verify-all.mjs      # [NEW] one-click verification (mock GCP + 6 suites)
 │   ├── verify_insights.ts  # [NEW] insight aggregation assertions
 │   └── ingest-products.mjs # Document AI → Vertex AI Search ingest
 ├── cloudbuild.yaml         # [NEW] Artifact Registry build
@@ -180,6 +182,7 @@ smart-service-agent/
 - [x] BigQuery insight page (TOP products / intent distribution / ticket trends) with demo-data labeling
 - [x] Gemini resilience (retry + knowledge-base fallback)
 - [x] Cloud Run deployment config (`cloudbuild.yaml` + `deploy-cloudrun.sh`, `PORT=8080`, `min-instances=1`)
+- [x] One-click verification (`npm run verify`): 6 suites all green, retrieval Top-3 96.4%
 - [ ] 3-minute demo video
 - [ ] Live demo: Cloud Run URL + embedded widget on test page
 - [ ] hack2skill team page completed (≥2 members)

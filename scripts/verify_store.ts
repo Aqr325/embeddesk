@@ -27,8 +27,10 @@ async function main() {
     if (!cond) failures++;
   };
 
-  // 预建会话（tickets.session_id 外键指向 sessions）
-  for (const sid of ['s-fire-1', 's-sqlite-1', 's-plain-1']) {
+  // 预建会话（tickets.session_id 外键指向 sessions；id 带运行后缀保证重复执行幂等）
+  const RUN = Date.now().toString(36);
+  const SESSIONS = { fire: `s-fire-${RUN}`, sqlite: `s-sqlite-${RUN}`, plain: `s-plain-${RUN}` };
+  for (const sid of Object.values(SESSIONS)) {
     db.createSession({ id: sid, title: `测试会话 ${sid}`, model: 'gemini:gemini-2.5-flash' });
   }
 
@@ -37,7 +39,7 @@ async function main() {
   const before = await firestoreStats();
   const t1 = await persistTicket({
     id: `t-fire-${Date.now()}`,
-    session_id: 's-fire-1',
+    session_id: SESSIONS.fire,
     customer_name: '万总',
     intent: 'complaint',
     reason: '产品质量投诉',
@@ -62,7 +64,7 @@ async function main() {
   try {
     t2 = await persistTicket({
       id: `t-sqlite-${Date.now()}`,
-      session_id: 's-sqlite-1',
+      session_id: SESSIONS.sqlite,
       intent: 'other',
       reason: '回退测试',
       trigger_rule: 'AGENT_TOOL',
@@ -81,7 +83,7 @@ async function main() {
   process.env.DATA_PROVIDER = 'sqlite';
   const t3 = await persistTicket({
     id: `t-plain-${Date.now()}`,
-    session_id: 's-plain-1',
+    session_id: SESSIONS.plain,
     reason: 'plain 模式',
     trigger_rule: 'AGENT_TOOL',
   });

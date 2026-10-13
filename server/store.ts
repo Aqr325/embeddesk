@@ -8,7 +8,7 @@
  *   - firestore 且 FIRESTORE_PROJECT 已配 → 优先 Firestore；
  *   - Firestore 调用失败（网络/鉴权/配额）→ 自动回退 SQLite，记 warn 日志，不阻断主链路。
  *
- * 零依赖：Firestore REST（documents:commit / GET / runQuery）+ googleAuth 三档鉴权（含 mock 档）。
+ * 零依赖：Firestore REST（PATCH upsert / GET / runQuery）+ googleAuth 三档鉴权（含 mock 档）。
  */
 import { logger } from './logger.js';
 import * as db from './db.js';

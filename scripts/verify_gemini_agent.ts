@@ -14,12 +14,14 @@
  *   T2 create_ticket 经 Agent 工具建单（captured + 落库 + 防重规则不破坏）
  *   T3 工具参数缺必填 → 回灌错误 → 模型自修复后收尾
  *   T4 未知工具名 → 错误回灌 → 不崩溃
- *   T5 ≤5 轮硬上限 → 降级知识库直答（usedModel=knowledge_base）
+ *   T5 ≤5 轮硬上限 → 降级知识库直答（先灌真实 catalog，验证降级链路命中真实产品 QA）
  *   T6 generateContent HTTP 500 → 降级知识库直答
  *   T7 Vertex 检索映射（structData → FaqHit，签名兼容）
  *   T8 Vertex 检索 503 → rag.ts 自动回退 lexical（种子 FAQ 仍可命中）
  *   T9 路由开关（AGENT_PROVIDER=tencent 时 geminiConfigured=false）
  */
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { callAgent } from '../server/agentCore.js';
 import { geminiConfigured } from '../server/geminiAgent.js';
 import { retrieveRag, getRagStats } from '../server/rag.js';
@@ -28,12 +30,43 @@ import * as db from '../server/db.js';
 
 const MOCK = process.env.MOCK_URL || 'http://127.0.0.1:4599';
 
-async function control(scenario: string): Promise<void> {
+/** 控制 mock：scenario 切换 / resetDocs 清空灌入文档（回退 CANNED_DOCS） */
+async function control(body: Record<string, unknown>): Promise<void> {
   await fetch(MOCK + '/__control', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scenario }),
+    body: JSON.stringify(body),
   });
+}
+
+/** 把真实产品 catalog 灌入 mock Vertex（T5/T6 降级链路在真实知识库上验证）。
+ *  catalog.json（gitignore，本地全量 16 款）优先；缺失时降级 fixtures/sample-catalog.json（仓库样板）。 */
+async function ingestCatalogToMock(): Promise<number> {
+  const candidates = [
+    resolve('data/products/catalog.json'),
+    resolve('scripts/fixtures/sample-catalog.json'),
+  ];
+  const path = candidates.find((p) => existsSync(p));
+  if (!path) { console.log('[ingest] 无 catalog 文件，跳过灌库（T5/T6 降级将依赖 CANNED_DOCS）'); return 0; }
+  const catalog = JSON.parse(readFileSync(path, 'utf8'));
+  const documents = (catalog.qa || []).map((qa: any) => ({
+    id: qa.id,
+    structData: {
+      question: qa.question,
+      answer: qa.answer,
+      keywords: qa.keywords || [],
+      category: qa.category || 'product',
+    },
+  }));
+  const url = `${MOCK}/projects/${process.env.GCP_PROJECT || 'mock-project'}/locations/global/collections/default_collection/engines/${process.env.VERTEX_SEARCH_ENGINE_ID || 'mock-engine'}/documents:import`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ inlineSource: { documents } }),
+  });
+  if (!r.ok) throw new Error(`ingest failed: HTTP ${r.status}`);
+  console.log(`[ingest] 灌入 ${documents.length} 条真实 QA 到 mock Vertex（${path}）`);
+  return documents.length;
 }
 
 async function stats(): Promise<{ scenario: string; genCalls: number; searchCalls: number }> {
@@ -65,7 +98,7 @@ async function main() {
 
   /* ---------- T1: search_knowledge 工具循环 ---------- */
   console.log('\n[T1] function calling 循环：search_knowledge');
-  await control('search');
+  await control({ scenario: 'search' });
   const s1 = newSession('t1');
   const before1 = await stats();
   const r1 = await callAgent({
@@ -85,7 +118,7 @@ async function main() {
 
   /* ---------- T2: create_ticket 建单闭环 ---------- */
   console.log('\n[T2] create_ticket：Agent 工具建单');
-  await control('ticket');
+  await control({ scenario: 'ticket' });
   const s2 = newSession('t2');
   const r2 = await callAgent({
     ...baseOpts,
@@ -101,7 +134,7 @@ async function main() {
 
   /* ---------- T3: 参数缺必填 → 自修复 ---------- */
   console.log('\n[T3] 工具参数自修复');
-  await control('badargs');
+  await control({ scenario: 'badargs' });
   const s3 = newSession('t3');
   const r3 = await callAgent({
     ...baseOpts,
@@ -114,7 +147,7 @@ async function main() {
 
   /* ---------- T4: 未知工具 ---------- */
   console.log('\n[T4] 未知工具名不崩溃');
-  await control('unknown');
+  await control({ scenario: 'unknown' });
   const s4 = newSession('t4');
   const r4 = await callAgent({
     ...baseOpts,
@@ -124,9 +157,10 @@ async function main() {
   });
   assert(r4.text.length > 0, 'T4 未知工具错误回灌后模型正常收尾');
 
-  /* ---------- T5: ≤5 轮硬上限 → 知识库直答 ---------- */
+  /* ---------- T5: ≤5 轮硬上限 → 知识库直答（真实 catalog 灌库后验证） ---------- */
   console.log('\n[T5] 5 轮上限降级');
-  await control('always-tool');
+  await ingestCatalogToMock(); // 降级链路应在真实产品知识库上验证（而非 mock 罐头文档）
+  await control({ scenario: 'always-tool' });
   const s5 = newSession('t5');
   const r5 = await callAgent({
     ...baseOpts,
@@ -136,11 +170,12 @@ async function main() {
   });
   console.log('  usedModel:', r5.usedModel);
   assert(r5.usedModel === 'knowledge_base', 'T5 超过 5 轮降级知识库直答');
-  assert(r5.text.includes('1.5W'), 'T5 降级内容来自知识库（Vertex mock 文档）');
+  assert(r5.text.length > 10, 'T5 降级返回非空知识库文本');
+  assert(/小时|DJ102|续航/.test(r5.text), 'T5 降级内容来自真实 catalog（命中续航 QA）');
 
   /* ---------- T6: HTTP 500 → 知识库直答 ---------- */
   console.log('\n[T6] generateContent 500 降级');
-  await control('http-error');
+  await control({ scenario: 'http-error' });
   const s6 = newSession('t6');
   const r6 = await callAgent({
     ...baseOpts,
@@ -150,10 +185,14 @@ async function main() {
   });
   assert(r6.usedModel === 'knowledge_base' && r6.text.length > 0, 'T6 HTTP 500 降级知识库直答');
 
+  // T5/T6 灌入的 catalog 会让 T7 的精确召回断言失效，重置回 CANNED_DOCS
+  await control({ scenario: 'search', resetDocs: true });
+
   /* ---------- T7: Vertex 检索映射 ---------- */
   console.log('\n[T7] Vertex 检索：structData → FaqHit');
-  await control('search');
-  const hits7 = await retrieveRag('模组耗电太大怎么优化', 'tech_support', 3);
+  await control({ scenario: 'search' });
+  // query 与目标文档 question 对齐（text 包含加分），确保 top1 稳定为功耗文档（字段映射断言的前提）
+  const hits7 = await retrieveRag('Cat.1 模组的典型功耗是多少', 'tech_support', 3);
   console.log('  hits:', hits7.map((h) => h.id + ':' + h.score).join(' | '));
   assert(hits7.length === 2, 'T7 召回 2 条 mock 文档');
   assert(hits7[0].question.includes('功耗') && hits7[0].answer.includes('1.5W'), 'T7 字段映射正确（question/answer）');
@@ -162,11 +201,11 @@ async function main() {
 
   /* ---------- T8: Vertex 503 → 回退 lexical ---------- */
   console.log('\n[T8] Vertex 503 → lexical 兜底');
-  await control('search-error');
+  await control({ scenario: 'search-error' });
   const hits8 = await retrieveRag('Cat.1 模组适合什么场景', 'order_query', 3);
   console.log('  lexical hits:', hits8.map((h) => h.id + ':' + h.score).join(' | '));
   assert(hits8.length > 0, 'T8 Vertex 失败后 lexical 兜底仍命中种子 FAQ');
-  await control('search');
+  await control({ scenario: 'search' });
 
   /* ---------- T9: 路由开关 ---------- */
   console.log('\n[T9] 路由开关');
