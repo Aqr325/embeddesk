@@ -31,6 +31,7 @@ import { resolveOrderContext, withTimeout } from './orders.js';
 import { enrichProfile } from './profile.js';
 import { truncate } from './nlp.js';
 import { logger } from './logger.js';
+import { persistTicket } from './store.js';
 import { enqueue } from './writeQueue.js';
 import { getOpenSession, registerSession, touchSession as regTouchSession, setSessionStatus } from './sessionRegistry.js';
 // AI 内核共享层：与 web/embed 共用同一 Agent 调用与系统提示词构造
@@ -164,27 +165,25 @@ async function openIngestTicket(opts: {
   });
   const finalPriority = higherPriority(opts.priority, esc.decision.priority);
   const sentimentForTicket = sum?.sentiment ?? esc.sentiment;
-  // 工单写入入队（write-behind），与消息/意图流水统一由 writeQueue 批量落库
-  enqueue({
-    type: 'createTicket',
-    payload: {
-      id: ticketId,
-      session_id: opts.session.id,
-      customer_name: opts.session.customer_name,
-      intent: opts.intent,
-      reason: opts.reason,
-      trigger_rule: opts.rule,
-      summary: (sum?.summary || opts.summary).slice(0, 800),
-      sentiment: sentimentForTicket,
-      tags: sum?.tags?.length ? sum.tags.join(',') : null,
-      escalated: esc.decision.escalate ? 1 : 0,
-      escalation_reason: esc.decision.reason,
-      priority: finalPriority,
-      status: 'pending',
-      assignee,
-      sla_due_at: slaDue,
-      channel: opts.session.channel,
-    },
+  // 统一经 persistTicket 落库：Firestore 优先 + SQLite 兜底 + BigQuery 建单事件（D4 验收点：
+  // 渠道级建单也必须落 Firestore，与 Agent create_ticket 工具路径共用单一写入口，避免绕过）。
+  await persistTicket({
+    id: ticketId,
+    session_id: opts.session.id,
+    customer_name: opts.session.customer_name,
+    intent: opts.intent,
+    reason: opts.reason,
+    trigger_rule: opts.rule,
+    summary: (sum?.summary || opts.summary).slice(0, 800),
+    sentiment: sentimentForTicket,
+    tags: sum?.tags?.length ? sum.tags.join(',') : null,
+    escalated: esc.decision.escalate ? 1 : 0,
+    escalation_reason: esc.decision.reason,
+    priority: finalPriority,
+    status: 'pending',
+    assignee,
+    sla_due_at: slaDue,
+    channel: opts.session.channel,
   });
   // 升级通知（best-effort，不阻塞建单）
   if (esc.decision.notify) {

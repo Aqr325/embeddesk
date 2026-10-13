@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "name": "中科佳晨产品库样板（3 款，仓库复现用）",
+    "source": "szjammer.com 首页产品信息人工结构化",
+    "collectedAt": "2026-10-13",
+    "seed": true,
+    "note": "scripts/fixtures 下的可提交样板；完整 catalog 位于 data/products/catalog.json（gitignore，含客户资料）",
+    "company": {
+      "name": "深圳市中科佳晨技术有限公司",
+      "profile": "已推出 10 余款无人机反制产品，拥有超大功率射频增强技术和 VCO 射频架构技术专利",
+      "patents": ["基于 VCO 射频信号基层架构技术平台", "超大功率射频增强 power boosting 技术"],
+      "milestones": ["2023-12-06 至 12-08 参展深圳军博会"]
+    }
+  },
+  "products": [
+    {
+      "id": "dj9341",
+      "name": "无人机干扰枪 DJ9341-8频",
+      "model": "DJ9341",
+      "category": "无人机干扰枪",
+      "formFactor": "手持干扰枪",
+      "frequencyBands": ["433M", "900M", "1.2G", "1.4G", "1.5G", "2.4G", "5.2G", "5.8G"],
+      "jamTypes": ["图传", "遥控", "定位"],
+      "jamRange": "100M-2KM",
+      "highlights": ["八频段设计", "超大功率射频", "2 秒见效"],
+      "scenarios": ["户外反制", "应急处突"],
+      "docs": [],
+      "source": "szjammer.com 首页（含战技性能指标）"
+    },
+    {
+      "id": "dt900",
+      "name": "干扰枪 DT900-侦测打击",
+      "model": "DT900",
+      "category": "侦测打击一体设备",
+      "formFactor": "侦测打击一体机",
+      "frequencyBands": ["飞控阻断八频段", "GPS", "QZSS", "GLONASS", "Galileo"],
+      "jamTypes": ["飞控阻断", "卫星定位阻断"],
+      "jamRange": null,
+      "highlights": ["八个频段飞控阻断", "全星座卫星定位阻断", "VCO 射频架构专利"],
+      "scenarios": ["反黑飞", "要地防护"],
+      "docs": ["便携式无人机管制设备 DT900 用户使用手册 V1.0"],
+      "source": "szjammer.com 首页"
+    },
+    {
+      "id": "dj500",
+      "name": "无人机反制-基站款 DJ500",
+      "model": "DJ500",
+      "category": "反制设备大全",
+      "formFactor": "户外基站",
+      "frequencyBands": [],
+      "jamTypes": ["迫降", "返航", "悬停"],
+      "jamRange": null,
+      "highlights": ["2023 款户外基站", "超大功率射频器件", "VCO 射频设计 + 电流负反馈", "长时间工作不发热"],
+      "scenarios": ["户外固定点位防护"],
+      "docs": [],
+      "source": "szjammer.com 首页"
+    }
+  ],
+  "qa": [
+    {
+      "id": "qa-dj9341-bands",
+      "category": "product",
+      "question": "DJ9341 干扰枪支持哪些反制频段？",
+      "answer": "DJ9341 覆盖八个频段：433M、900M、1.2G、1.4G、1.5G、2.4G、5.2G、5.8G，可对图传、遥控、定位三类信号实施干扰。",
+      "keywords": ["DJ9341", "频段", "八频", "8频", "干扰枪", "反制频段"]
+    },
+    {
+      "id": "qa-dj9341-range",
+      "category": "product",
+      "question": "无人机干扰枪的有效干扰距离是多少？",
+      "answer": "以 DJ9341 为例，有效干扰距离为 100M-2KM；干扰类型覆盖图传、遥控与定位，2 秒见效。",
+      "keywords": ["干扰距离", "有效距离", "多远", "DJ9341", "射程"]
+    },
+    {
+      "id": "qa-dt900-intro",
+      "category": "product",
+      "question": "DT900 侦测打击一体机是什么产品？",
+      "answer": "DT900 是中科佳晨自主研发的反黑飞设备，内置业界领先的八个频段飞控阻断频率，以及 GPS/QZSS/GLONASS/Galileo 卫星定位阻断频率，可使被管制无人机迫降/返航。随机附带用户使用手册 V1.0。",
+      "keywords": ["DT900", "侦测打击", "一体机", "反黑飞", "迫降"]
+    },
+    {
+      "id": "qa-dj500-base",
+      "category": "product",
+      "question": "基站款反制设备 DJ500 有什么特点？",
+      "answer": "DJ500 是 2023 款户外基站式反制设备，采用超大功率射频器件，可对无人机实施迫降、返航、悬停处置；采用 VCO 射频设计与电流负反馈技术，长时间工作不发热发烫。",
+      "keywords": ["DJ500", "基站", "户外", "迫降", "返航", "悬停", "发热"]
+    }
+  ]
+}

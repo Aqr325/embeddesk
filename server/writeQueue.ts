@@ -107,3 +107,13 @@ export function getStats(): QueueStats {
   stats.pending = buffer.length;
   return { ...stats };
 }
+
+/**
+ * 同步刷写当前缓冲（D4 验收修复：persistTicket 在「写工单」前需确保会话行已落库，
+ * 否则 better-sqlite3 外键约束会失败。原 write-behind 模式下 createSession 与 createTicket
+ * 同批 FIFO 落库天然有序；改为 persistTicket 同步建单后，需显式 flush 还原该顺序保证）。
+ * 幂等安全：缓冲为空时为 no-op。
+ */
+export function flushNow(): void {
+  flush();
+}

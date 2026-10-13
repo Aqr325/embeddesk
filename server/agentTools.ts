@@ -18,6 +18,7 @@ import { createSdkMcpServer, tool, type SdkMcpServerResult, type SdkMcpToolDefin
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import * as db from './db.js';
+import { persistTicket } from './store.js';
 import { retrieveRag, buildRagContext } from './rag.js';
 import { resolveOrderContext } from './orders.js';
 import { computePriority, computeSlaDue, assignTicket } from './tickets.js';
@@ -171,7 +172,7 @@ export function createCsaAgentTools(ctx: CsaToolContext): CsaToolBundle {
       const ticketId = uuidv4();
       const slaDue = computeSlaDue(pr, new Date().toISOString());
       const queuePosition = db.countTicketsByStatus('pending') + 1;
-      db.createTicket({
+      await persistTicket({
         id: ticketId,
         session_id: ctx.sessionId,
         customer_name: ctx.customerName,

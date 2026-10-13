@@ -13,9 +13,22 @@ import { createSign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { logger } from './logger.js';
 
-export type GoogleAuthMode = 'api-key' | 'sa' | 'metadata' | 'none';
+export type GoogleAuthMode = 'api-key' | 'sa' | 'metadata' | 'mock' | 'none';
+
+/** 是否为本地 mock 端点（仅用于无凭证环境冒烟，不影响真实鉴权） */
+function isMockEndpoint(): boolean {
+  const u =
+    process.env.VERTEX_SEARCH_BASE_URL ||
+    process.env.GEMINI_BASE_URL ||
+    process.env.FIRESTORE_BASE_URL ||
+    process.env.DOCAI_BASE_URL ||
+    process.env.BIGQUERY_BASE_URL ||
+    '';
+  return /^(https?:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(u);
+}
 
 export function googleAuthMode(): GoogleAuthMode {
+  if (isMockEndpoint()) return 'mock';
   if (process.env.GEMINI_API_KEY) return 'api-key';
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS && loadServiceAccount()) return 'sa';
   if (process.env.AGENT_PROVIDER === 'gemini') return 'metadata';
@@ -90,6 +103,7 @@ let tokenCache: { token: string; exp: number } | null = null;
  */
 export async function authHeaders(): Promise<Record<string, string>> {
   const mode = googleAuthMode();
+  if (mode === 'mock') return {}; // 本地 mock 端点无需鉴权头
   if (mode === 'api-key') return { 'x-goog-api-key': process.env.GEMINI_API_KEY as string };
   if (mode === 'none') throw new Error('GOOGLE_AUTH_NOT_CONFIGURED');
   const now = Date.now();
