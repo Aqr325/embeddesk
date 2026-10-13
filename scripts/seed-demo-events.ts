@@ -18,7 +18,7 @@ const OUT = process.env.EVENTS_JSONL_PATH || 'data/analytics-events.jsonl';
 const DAYS = Number(process.env.SEED_DAYS || 21);
 const PER_DAY = Number(process.env.SEED_PER_DAY || 18);
 
-// 模拟产品咨询语料（与 data/products/catalog.json 真实产品对齐）
+// 模拟产品咨询语料（与 data/products/catalog.json 真实产品对齐，16 款全覆盖）
 const QUERIES: Array<{ query: string; docId: string; channel: string }> = [
   { query: 'DT900 侦测打击一体机是什么产品', docId: 'qa-dt900-intro', channel: 'web' },
   { query: 'DJ9341 干扰枪的有效干扰距离是多少', docId: 'qa-dj9341-range', channel: 'embed' },
@@ -33,6 +33,16 @@ const QUERIES: Array<{ query: string; docId: string; channel: string }> = [
   { query: '你们的反制设备用了什么专利技术', docId: 'qa-patents', channel: 'web' },
   { query: '机场监狱变电站这类场景用什么设备', docId: 'qa-scenario-selection', channel: 'embed' },
   { query: '考场手机信号屏蔽器有吗', docId: 'qa-exam-shield', channel: 'email' },
+  { query: 'DJ100 标准款干扰枪有什么特点', docId: 'qa-dj100-intro', channel: 'web' },
+  { query: 'DJ102 的功率电池和重量是多少', docId: 'qa-dj102-specs', channel: 'embed' },
+  { query: 'DJ886 旧款反制枪怎么样适合谁用', docId: 'qa-dj886-specs', channel: 'im' },
+  { query: 'DJ600 反制盾的干扰距离和频段是多少', docId: 'qa-dj600-specs', channel: 'web' },
+  { query: '便携箱 DJ300 有什么特点干扰距离多远', docId: 'qa-dj300-specs', channel: 'embed' },
+  { query: 'SDJ800 的检测距离和反制距离是多少', docId: 'qa-sdj800-specs', channel: 'web' },
+  { query: 'DJ-BT2 探测器的侦测距离和续航是多少', docId: 'qa-bt2-specs', channel: 'im' },
+  { query: '考场屏蔽器能屏蔽哪些信号屏蔽半径多大', docId: 'qa-exam-shield-specs', channel: 'email' },
+  { query: '单兵巡逻固定点位考场场景分别推荐什么设备', docId: 'qa-selection-guide', channel: 'embed' },
+  { query: '各款设备的工作时间续航是多久', docId: 'qa-battery-life', channel: 'web' },
 ];
 const CHANNELS = ['web', 'embed', 'im', 'email'];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];

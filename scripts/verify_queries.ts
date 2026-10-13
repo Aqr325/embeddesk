@@ -1,9 +1,9 @@
 /**
- * D2 验收脚本：20 条测试 query 验证 Vertex 检索 Top3 命中率（≥80%）
+ * D2 验收脚本：28 条测试 query 验证 Vertex 检索 Top3 命中率（≥80%）
  *
  * 自包含：
  *   ① 把 data/products/catalog.json 的 QA 灌入本地 mock Vertex（documents:import）；
- *   ② 对 20 条覆盖「型号 / 参数 / 场景」三类的 query 调 retrieveRag(query,null,3)；
+ *   ② 对 28 条覆盖「型号 / 参数 / 场景」三类的 query 调 retrieveRag(query,null,3)；
  *   ③ 统计期望目标 doc 是否落在 Top3，输出 Markdown 报告到 stdout + 文件。
  *
  * 运行（mock 已在 4599 跑着）：
@@ -20,9 +20,9 @@ const GCP_PROJECT = process.env.GCP_PROJECT || 'mock-project';
 const ENGINE = process.env.VERTEX_SEARCH_ENGINE_ID || 'mock-engine';
 const LOCATION = process.env.VERTEX_SEARCH_LOCATION || 'global';
 
-/** 20 条测试 query：q=用户问题 expect=期望命中的 catalog QA id cat=分类 */
+/** 28 条测试 query：q=用户问题 expect=期望命中的 catalog QA id cat=分类 */
 const QUERIES: { q: string; expect: string; cat: '型号' | '参数' | '场景' }[] = [
-  // 型号类（10 条）
+  // 型号类（14 条）
   { q: 'DJ9341 干扰枪支持哪些反制频段', expect: 'qa-dj9341-bands', cat: '型号' },
   { q: 'DT900 侦测打击一体机是什么产品', expect: 'qa-dt900-intro', cat: '型号' },
   { q: 'DJ500 基站款反制设备有什么特点', expect: 'qa-dj500-base', cat: '型号' },
@@ -33,18 +33,26 @@ const QUERIES: { q: string; expect: string; cat: '型号' | '参数' | '场景' 
   { q: '有没有超大功率的反制枪', expect: 'qa-dj102-power', cat: '型号' },
   { q: 'DT900 有用户手册吗', expect: 'qa-dt900-manual', cat: '型号' },
   { q: '有没有射频干扰模块或者 PCBA 方案', expect: 'qa-pcba-modules', cat: '型号' },
-  // 参数类（5 条）
+  { q: 'DJ100 标准款干扰枪有什么特点', expect: 'qa-dj100-intro', cat: '型号' },
+  { q: 'DJ886 旧款反制枪怎么样适合谁用', expect: 'qa-dj886-specs', cat: '型号' },
+  { q: '考场手机信号屏蔽器有吗', expect: 'qa-exam-shield', cat: '型号' },
+  { q: '便携箱 DJ300 有什么特点干扰距离多远', expect: 'qa-dj300-specs', cat: '型号' },
+  // 参数类（8 条）
   { q: '无人机干扰枪的有效干扰距离是多少', expect: 'qa-dj9341-range', cat: '参数' },
   { q: '干扰类型有哪些能干扰什么信号', expect: 'qa-dj9341-types', cat: '参数' },
   { q: '无人机反制设备都有哪些频段', expect: 'qa-dj9341-bands', cat: '参数' },
   { q: '户外基站长时间工作会不会发热', expect: 'qa-heat-design', cat: '参数' },
-  { q: '干扰距离100米到2公里的是哪款', expect: 'qa-dj9341-range', cat: '参数' },
-  // 场景类（5 条）
+  { q: 'DJ9341 的功率和天线增益是多少', expect: 'qa-dj9341-specs', cat: '参数' },
+  { q: 'DJ102 的功率电池和重量是多少', expect: 'qa-dj102-specs', cat: '参数' },
+  { q: 'SDJ800 的检测距离和反制距离是多少', expect: 'qa-sdj800-specs', cat: '参数' },
+  { q: 'DJ-BT2 探测器的侦测距离和续航是多少', expect: 'qa-bt2-specs', cat: '参数' },
+  // 场景类（6 条）
   { q: '中科佳晨是一家什么公司', expect: 'qa-company-profile', cat: '场景' },
   { q: '你们的反制设备用了什么专利技术', expect: 'qa-patents', cat: '场景' },
   { q: '你们有哪些无人机反制产品', expect: 'qa-product-range', cat: '场景' },
   { q: '机场监狱变电站这类场景用什么设备', expect: 'qa-scenario-selection', cat: '场景' },
-  { q: '考场手机信号屏蔽器有吗', expect: 'qa-exam-shield', cat: '场景' },
+  { q: '单兵巡逻固定点位考场场景分别推荐什么设备', expect: 'qa-selection-guide', cat: '场景' },
+  { q: '侦测设备和反制设备有什么区别该先配哪个', expect: 'qa-detection-vs-jamming', cat: '场景' },
 ];
 
 async function ingestCatalog() {
@@ -96,7 +104,7 @@ async function main() {
 
   const pass = hits / total >= 0.8;
   const report = [
-    '# Vertex 检索质量验证报告（20 条 query）',
+    '# Vertex 检索质量验证报告（28 条 query）',
     '',
     `- 运行时间：${new Date().toISOString()}`,
     `- 检索提供方：Vertex AI Search（mock 端点 ${MOCK}）`,

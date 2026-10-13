@@ -55,6 +55,11 @@ const PRODUCT_ALIAS: Record<string, string> = {
   dj300: 'DJ300 便携枪',
   'dj-bt2': 'DJ-BT2 手持探测器',
   sdj800: 'SDJ800 查打一体',
+  'exam-shield': 'SJ-10C 考场屏蔽器',
+  'pcba-300m': '300M-2.4G PCBA',
+  'pcba-5800': '5.8G PCBA',
+  'pcba-8band': '八频 PCBA',
+  'pcba-4band': '四频 PCBA',
   pcba: 'PCBA/射频模块',
 };
 

@@ -11,7 +11,7 @@
 
 EmbedDesk is an **embedded AI customer-service agent** for industrial-equipment companies. A single `<script>` tag drops a Shadow-DOM chat widget onto any website; the same agent runs on the web console and the admin back-office.
 
-- **Answers expert questions** — retrieves from a real product knowledge base (18 anti-drone / security products from szjammer.com) and replies with citations.
+- **Answers expert questions** — retrieves from a real product knowledge base (16 products from szjammer.com's product center: 11 devices + exam shield + 4 PCBA modules) and replies with citations.
 - **Detects purchase intent** — when a visitor shows buying signals, the agent auto-creates a ticket (with structured fields) and notifies sales.
 - **Turns support into revenue** — the business story: first-response from 2 hours → 30 seconds, and no lead is lost.
 - **Cloud-native & resilient** — Gemini on Vertex AI for reasoning, Vertex AI Search for retrieval, Firestore for tickets/sessions, BigQuery for insight events; all with local fallbacks so the demo never hard-fails.
@@ -30,7 +30,7 @@ Channels (zero-change)        Cloud Run · Express shell        AI Kernel (repla
 └──────────┘ └──────────┘ └──────────┘   └──────────────────────────┘  └──────────────────────┘  └────────────────────┘
                                                ↘ fallback: lexical RAG     │                      ├─ Firestore (tickets/sessions)
                                                  (rag.ts preserved)       │                      └─ BigQuery (events/insights)
-                                                                 Document AI ──↑ (18 product docs → JSON)
+                                                                 Document AI ──↑ (16 product docs → JSON)
 ```
 
 **Key contracts (guarantee `index.ts` / `channels.ts` zero-change):**
@@ -49,7 +49,7 @@ Channels (zero-change)        Cloud Run · Express shell        AI Kernel (repla
 | **Cloud Run** | Hosts the full Express service (single container, `PORT=8080`) |
 | **Vertex AI (Gemini)** | Dialogue + function calling (`gemini-2.5-flash` by default) |
 | **Vertex AI Search (Discovery Engine)** | Enterprise knowledge retrieval |
-| **Document AI** | Parses 18 product PDFs / brochures → structured JSON → Vertex data store |
+| **Document AI** | Parses product PDFs / brochures (16 catalog entries) → structured JSON → Vertex data store |
 | **Firestore** | Ticket / session persistence (Native mode) |
 | **BigQuery** | Insight event stream (question / hit / latency / ticket_created) |
 | **Artifact Registry** | Container image storage for Cloud Build |
@@ -120,7 +120,7 @@ Switch flags set by `deploy-cloudrun.sh` from `.env`:
 
 Per the project data policy, the system is **explicit and honest about data provenance**:
 
-- **Product knowledge = real asset** — 18 anti-drone / security products from szjammer.com (specs, brochures, parameter pop-ups).
+- **Product knowledge = real asset** — 16 catalog entries from szjammer.com's product center (11 counter-drone devices + SJ-10C exam shield + 4 PCBA modules), with specs transcribed from official product pages (frequency bands, power, range, battery).
 - **FAQ cold-start = derived from real materials** — 30–50 structured Q&A authored from the actual product docs.
 - **Operational data = demo data** — conversations, tickets, and BigQuery insight events are generated for the demo and **clearly labeled "演示数据 / demo data"** in the UI and this repo. We do **not** claim real production telemetry.
 
