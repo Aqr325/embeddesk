@@ -37,9 +37,10 @@ import { EmployeeManager } from '../components/EmployeeManager';
 import { ChannelManager } from '../components/ChannelManager';
 import { DataImport } from '../components/DataImport';
 import { LlmSettings } from '../components/LlmSettings';
+import { InsightsPanel } from '../components/InsightsPanel';
 import { Skeleton } from '../components/ui/Skeleton';
 
-type Tab = 'conversations' | 'tickets' | 'faqs' | 'employees' | 'data' | 'channels' | 'ai';
+type Tab = 'conversations' | 'tickets' | 'faqs' | 'insights' | 'employees' | 'data' | 'channels' | 'ai';
 
 function formatBytes(n: number): string {
   if (!n) return '0 B';
@@ -116,6 +117,7 @@ export function AdminPage() {
     },
     { id: 'tickets', label: '工单', icon: <Headset size={15} />, count: admin.tickets.length },
     { id: 'faqs', label: '知识库', icon: <BookOpen size={15} />, count: admin.faqs.length },
+    { id: 'insights', label: '洞察', icon: <TrendingUp size={15} />, count: admin.insights?.totals.questions },
   ];
   if (canManage) {
     tabs.push({ id: 'employees', label: '员工管理', icon: <Users size={15} />, count: admin.employees.length });
@@ -316,6 +318,7 @@ export function AdminPage() {
                 </div>
               )}
               {tab === 'faqs' && <FaqManager faqs={admin.faqs} onAdd={admin.addFaq} onDelete={admin.removeFaq} />}
+              {tab === 'insights' && <InsightsPanel data={admin.insights} />}
               {tab === 'employees' && (
                 <EmployeeManager
                   employees={admin.employees}

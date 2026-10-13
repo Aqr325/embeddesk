@@ -1,6 +1,6 @@
 /** useAdmin —— 管理后台数据聚合层（含分页与导出） */
 import { useCallback, useEffect, useState } from 'react';
-import type { DashboardStats, ConversationRow, Ticket, Faq } from '../types';
+import type { DashboardStats, ConversationRow, Ticket, Faq, InsightsData } from '../types';
 import { api, type DbMeta, type DbIntegrity, type MetricsSnapshot, type Employee, type EmployeeRole, type EmployeeStatus, type Site } from './useApi';
 
 export interface AdminFilters {
@@ -36,6 +36,9 @@ export function useAdmin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 事件流洞察（BigQuery / 本地 JSONL 聚合）
+  const [insights, setInsights] = useState<InsightsData | null>(null);
+
   // 数据管理面板状态
   const [dbMeta, setDbMeta] = useState<DbMeta | null>(null);
   const [integrity, setIntegrity] = useState<DbIntegrity | null>(null);
@@ -57,6 +60,14 @@ export function useAdmin() {
     setStats(s);
   }, []);
 
+  const loadInsights = useCallback(async () => {
+    try {
+      setInsights(await api.getInsights());
+    } catch {
+      /* 洞察非致命，失败保留上次快照 */
+    }
+  }, []);
+
   const loadConversations = useCallback(
     async (nextFilters: AdminFilters, page = 1) => {
       const r = await api.adminConversations({ ...nextFilters, page, pageSize: pagination.pageSize });
@@ -70,12 +81,13 @@ export function useAdmin() {
     setLoading(true);
     setError(null);
     try {
-      const [s, c, t, f, m] = await Promise.all([
+      const [s, c, t, f, m, ins] = await Promise.all([
         api.adminStats(),
         api.adminConversations({ page: 1, pageSize: 20 }),
         api.getTickets(),
         api.getFaqs(),
         api.dbMeta(),
+        api.getInsights().catch(() => null),
       ]);
       setStats(s);
       setConversations(c.conversations);
@@ -83,6 +95,7 @@ export function useAdmin() {
       setTickets(t.tickets);
       setFaqs(f.faqs);
       setDbMeta(m);
+      setInsights(ins);
     } catch (e: any) {
       setError(e?.message || '加载管理数据失败');
     } finally {
@@ -336,6 +349,7 @@ export function useAdmin() {
     conversations,
     tickets,
     faqs,
+    insights,
     filters,
     pagination,
     loading,
@@ -346,6 +360,7 @@ export function useAdmin() {
     dbError,
     loadAll,
     loadStats,
+    loadInsights,
     applyFilters,
     changePage,
     exportConversations,

@@ -26,7 +26,7 @@ export interface AnalyticsEvent {
 
 /* ============================ 配置 ============================ */
 
-function bqConfigured(): boolean {
+export function bqConfigured(): boolean {
   return Boolean(
     process.env.BIGQUERY_PROJECT &&
       process.env.BIGQUERY_DATASET &&

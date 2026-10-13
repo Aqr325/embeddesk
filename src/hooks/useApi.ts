@@ -8,6 +8,7 @@ import type {
   SatisfactionRecord,
   IntentId,
   CopilotSuggestion,
+  InsightsData,
 } from '../types';
 
 const BASE = '/api';
@@ -341,6 +342,9 @@ export const api = {
 
   /** CSAT 满意度问卷聚合统计（需管理员鉴权） */
   getCsat: () => http<CsatStats>('/admin/csat'),
+
+  /** 事件流洞察聚合（需管理员鉴权；BigQuery 优先，本地 JSONL 兜底） */
+  getInsights: () => http<InsightsData>('/admin/insights'),
 
   /** 获取 Prometheus text exposition（需管理员鉴权，由调用方触发下载或展示） */
   getPrometheus: async (): Promise<string> => (await rawRequest('/admin/metrics/prometheus')).text(),

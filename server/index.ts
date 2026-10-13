@@ -47,6 +47,7 @@ import { issueToken, verifyCredentials, requireAuth, requireRole, hashPassword }
 import { rateLimit, clientIp } from './ratelimit.js';
 import { logger } from './logger.js';
 import { recordRequest, metrics } from './metrics.js';
+import { getInsights } from './insights.js';
 import { asyncHandler, securityHeaders, notFoundHandler, errorHandler, HttpError } from './middleware.js';
 import { asString, asIntInRange, asOneOf, asTagString, asBool } from './validate.js';
 import { preload as preloadSessionRegistry } from './sessionRegistry.js';
@@ -657,6 +658,11 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
 app.get('/api/admin/metrics', requireAuth, asyncHandler(async (_req, res) => {
   // 将进程级指标、KB 检索 LRU 缓存指标、邮件投递指标合并；kbCache/emailDelivery 缺省为 undefined（旧前端兼容）。
   res.json({ ...metrics.snapshot(), kbCache: getKbCacheStats(), rag: getRagStats(), emailDelivery: getEmailDeliveryStats() });
+}));
+
+/** 事件流洞察聚合（需管理员鉴权；BigQuery 优先，本地 JSONL 兜底；方案 §8 D5） */
+app.get('/api/admin/insights', requireAuth, asyncHandler(async (_req, res) => {
+  res.json(await getInsights());
 }));
 
 /**

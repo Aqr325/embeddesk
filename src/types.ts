@@ -184,6 +184,34 @@ export interface DashboardStats {
   responseTimes: { avg: number; median: number; p95: number; sampleSize: number };
 }
 
+/** 事件流洞察聚合（server/insights.ts getInsights；方案 §8 D5 后台洞察页） */
+export interface InsightsData {
+  /** 数据来源：bigquery=真实事件流；local=本地 JSONL 兜底；empty=无数据 */
+  source: 'bigquery' | 'local' | 'empty';
+  /** 统计窗口（天） */
+  windowDays: number;
+  totals: {
+    questions: number;
+    searchHits: number;
+    tickets: number;
+    latencySamples: number;
+  };
+  /** 检索命中率（百分比，0–100） */
+  searchHitRate: number;
+  /** TOP 知识点（search_hit.docId 聚合） */
+  topDocs: Array<{ docId: string; label: string; count: number }>;
+  /** 热门查询（question.query 聚合） */
+  topQueries: Array<{ query: string; count: number }>;
+  /** 渠道分布（question.channel） */
+  channelDistribution: Array<{ channel: string; count: number }>;
+  /** 工单趋势（ticket_created 按天） */
+  ticketTrend: Array<{ date: string; tickets: number }>;
+  /** 提问趋势（question 按天） */
+  questionTrend: Array<{ date: string; questions: number }>;
+  /** 本赛事数据为演示数据（方案 §7 统一口径） */
+  demo: boolean;
+}
+
 export interface AppMeta {
   brand: string;
   mode: string;

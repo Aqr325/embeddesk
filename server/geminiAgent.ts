@@ -112,6 +112,45 @@ export function geminiConfigured(): boolean {
   return googleAuthMode() !== 'none';
 }
 
+/* ============================ 韧性 fetch（重试 + 限流降级，方案 §8 D5） ============================ */
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * 带重试的 fetch：对网络抖动、5xx、429（限流）做有限次退避重试；
+ * 重试耗尽仍失败则抛出，由调用方走知识库直答降级（与 SDK 路径一致）。
+ * 每次尝试独立 AbortSignal 超时，避免单轮卡死。
+ */
+async function fetchWithRetry(url: string, init: RequestInit, maxAttempts = 3): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const r = await fetch(url, { ...init, signal: AbortSignal.timeout(20000) });
+      // 可重试：服务端错误 / 限流
+      if (r.status === 429 || r.status >= 500) {
+        lastErr = new Error(`GEMINI_HTTP_${r.status}`);
+        if (attempt < maxAttempts) {
+          logger.warn(`[geminiAgent] 第 ${attempt} 次调用返回 ${r.status}，退避重试`);
+          await sleep(300 * attempt);
+          continue;
+        }
+        return r; // 返回最后响应，交由上层按错误处理
+      }
+      return r;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < maxAttempts) {
+        logger.warn(`[geminiAgent] 第 ${attempt} 次调用异常（${String((e as any)?.message || e).slice(0, 80)}），退避重试`);
+        await sleep(300 * attempt);
+        continue;
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /* ============================ 端点构造 ============================ */
 
 function baseUrl(): string {
@@ -211,11 +250,10 @@ export async function callAgentGemini(opts: CallAgentOptions): Promise<CallAgent
     });
 
     for (let round = 1; round <= MAX_ROUNDS; round++) {
-      const resp = await fetch(url, {
+      const resp = await fetchWithRetry(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify(body(true)),
-        signal: AbortSignal.timeout(opts.timeoutMs),
       });
       if (!resp.ok) {
         const detail = (await resp.text().catch(() => '')).slice(0, 200);

@@ -1,0 +1,18 @@
+# EmbedDesk · Cloud Build 配置（方案 §8 D3/D4 部署收口）
+# 用法：
+#   gcloud builds submit --config cloudbuild.yaml .
+# 镜像推送到 Artifact Registry 后，由 deploy-cloudrun.sh 部署到 Cloud Run。
+steps:
+  - id: build
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/embeddesk/embeddesk:$SHORT_SHA', '.']
+  - id: push
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/embeddesk/embeddesk:$SHORT_SHA']
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/embeddesk/embeddesk:$SHORT_SHA'
+options:
+  logging: CLOUD_LOGGING_ONLY
+substitutions:
+  _REGION: asia-east1
+timeout: 1200s
