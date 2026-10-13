@@ -140,6 +140,7 @@ This is surfaced consistently across the README, the demo, and the admin insight
 | Intent → ticket | `create_ticket` → Firestore (cloud) / SQLite (local); sales email notify via `emailGateway` |
 | Insight dashboard | `server/insights.ts` (BigQuery → local JSONL fallback) + `src/components/InsightsPanel.tsx` |
 | Admin back-office | `src/pages/AdminPage.tsx` (tickets, stats, CSAT, **Insights** tab) |
+| Edge-telemetry reservation | `create_ticket` optional `device` param → `tickets.device_snapshot` (DB v12) — reserved for on-device modules; once field devices connect, telemetry snapshots attach to tickets for direct after-sales handoff ("device self-report → AI triage → human resolution") |
 
 ---
 

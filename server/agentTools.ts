@@ -138,8 +138,15 @@ export function createCsaAgentTools(ctx: CsaToolContext): CsaToolBundle {
         .enum(['low', 'medium', 'high', 'urgent'])
         .optional()
         .describe('可选：显式优先级；缺省由系统综合客户等级 / 意图 / 情绪计算'),
+      device: z
+        .string()
+        .optional()
+        .describe(
+          '可选：端侧设备遥测快照（JSON 字符串，如 {"model":"SDJ800","issue":"频段异常","uptimeH":72,"lastSeen":"2026-10-13T08:00Z"}）。' +
+            '端侧模组接入后由设备侧上报，随工单直达售后，实现「设备自报数据 + AI 初判 + 人工处置」闭环；未接入时留空。',
+        ),
     },
-    async ({ intent, summary, reason, priority }) => {
+    async ({ intent, summary, reason, priority, device }) => {
       captured.toolCalls.push('create_ticket');
       // 会话维度防重：已有未结工单则直接返回，避免 Agent 重复建单
       const open = db
@@ -168,6 +175,8 @@ export function createCsaAgentTools(ctx: CsaToolContext): CsaToolBundle {
         unresolved: true,
       });
       const pr: db.TicketPriority = higherPriority(prBase, esc.decision.priority);
+      // 端侧遥测预留（v12）：device_snapshot 随工单落库，模组上线后直达售后
+      const deviceSnapshot = device ? String(device).slice(0, 4000) : undefined;
       const assign = assignTicket(intentId, {});
       const ticketId = uuidv4();
       const slaDue = computeSlaDue(pr, new Date().toISOString());
@@ -188,6 +197,7 @@ export function createCsaAgentTools(ctx: CsaToolContext): CsaToolBundle {
         assignee: assign.assignee,
         sla_due_at: slaDue,
         channel: ctx.channel,
+        device_snapshot: deviceSnapshot,
       });
       if (esc.decision.notify) {
         void notifyEscalation({

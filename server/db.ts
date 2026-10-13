@@ -390,6 +390,15 @@ const migrations: Migration[] = [
       ensureColumn('tickets', 'escalation_reason', 'escalation_reason TEXT');
     },
   },
+  {
+    // 端侧遥测预留：device_snapshot（设备遥测快照 JSON）。端侧模组上线后，
+    // 现场设备数据随 create_ticket 直达售后工单，完成「设备自报 + AI 初判 + 售后处置」闭环。
+    version: 12,
+    name: '端侧遥测预留：tickets(device_snapshot)',
+    up: () => {
+      ensureColumn('tickets', 'device_snapshot', 'device_snapshot TEXT');
+    },
+  },
 ];
 
 /** 按 user_version 顺序应用未执行的迁移，保证 schema 演进可追踪、幂等、可重放 */
@@ -483,6 +492,8 @@ export interface DbTicket {
   sla_due_at: string | null;
   /** 来源渠道（web / embed / email / im），v5 新增 */
   channel: string;
+  /** 端侧设备遥测快照（JSON 字符串），v12 预留：模组上线后随工单直达售后 */
+  device_snapshot: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -794,13 +805,14 @@ export function createTicket(ticket: Partial<DbTicket> & { id: string; session_i
     note: ticket.note ?? null,
     sla_due_at: ticket.sla_due_at ?? null,
     channel: ticket.channel ?? 'web',
+    device_snapshot: ticket.device_snapshot ?? null,
     created_at: ticket.created_at ?? now,
     updated_at: now,
   };
   db.prepare(
     `INSERT INTO tickets
-     (id, session_id, customer_name, intent, reason, trigger_rule, summary, sentiment, tags, escalated, escalation_reason, priority, status, assignee, note, sla_due_at, channel, created_at, updated_at)
-     VALUES (@id, @session_id, @customer_name, @intent, @reason, @trigger_rule, @summary, @sentiment, @tags, @escalated, @escalation_reason, @priority, @status, @assignee, @note, @sla_due_at, @channel, @created_at, @updated_at)`
+     (id, session_id, customer_name, intent, reason, trigger_rule, summary, sentiment, tags, escalated, escalation_reason, priority, status, assignee, note, sla_due_at, channel, device_snapshot, created_at, updated_at)
+     VALUES (@id, @session_id, @customer_name, @intent, @reason, @trigger_rule, @summary, @sentiment, @tags, @escalated, @escalation_reason, @priority, @status, @assignee, @note, @sla_due_at, @channel, @device_snapshot, @created_at, @updated_at)`
   ).run(full);
   return full;
 }
