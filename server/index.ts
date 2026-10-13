@@ -926,7 +926,10 @@ app.delete('/api/employees/:id', requireAuth, requireRole('admin'), asyncHandler
 app.get('/api/customers/:customerId/profile', requireAuth, asyncHandler(async (req, res) => {
   const customerId = asString(req.params.customerId, { max: 64, name: 'customerId' });
   if (!customerId) throw new HttpError(400, '客户标识不能为空');
-  res.json({ profile: db.getCustomerProfile(customerId) ?? null });
+  const profile = db.getCustomerProfile(customerId);
+  // 契约一致性：未知客户 → 404（前端 http() 会抛错，调用方已有 catch 兜底显示空画像）
+  if (!profile) return res.status(404).json({ error: '客户画像不存在', profile: null });
+  res.json({ profile });
 }));
 
 // 更新/创建客户画像（upsert）

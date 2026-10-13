@@ -43,8 +43,11 @@ function pickPort(preferred) {
 
 function run(cmd, args, env) {
   return new Promise((done) => {
-    // TSX 为 cli.mjs：统一用 process.execPath（node）执行，跨平台零 shell 依赖
-    const child = spawn(process.execPath, [cmd, ...args], { cwd: ROOT, env: { ...process.env, ...env }, stdio: 'inherit' });
+    // .mjs 脚本直接用 node 执行；.ts 脚本经 tsx CLI 转译
+    const isTs = args[0]?.endsWith('.ts');
+    const exe = isTs ? process.execPath : process.execPath;
+    const execArgs = isTs ? [TSX, ...args] : args;
+    const child = spawn(exe, execArgs, { cwd: ROOT, env: { ...process.env, ...env }, stdio: 'inherit' });
     child.on('exit', (code) => done(code ?? 1));
     child.on('error', (e) => { console.error(`[verify-all] 启动失败: ${e.message}`); done(1); });
   });
@@ -113,6 +116,20 @@ const SUITES = [
       VERTEX_SEARCH_ENGINE_ID: 'mock-engine',
       GCP_PROJECT: 'mock-project',
       CSA_DB_PATH: 'data/verify_queries.db',
+    },
+  },
+  {
+    name: 'verify_http',
+    title: 'HTTP 全端点冒烟（40+ API 契约一致性，自起服务）',
+    args: ['scripts/verify_http.mjs'],
+    env: {
+      // HTTP 套件自起 Express 服务；端口取 mock 端口 +100，避免与 mock 及其余套件（各自独立 db/端口）冲突
+      PORT: String(PORT + 100),
+      CSA_DB_PATH: 'data/verify_http.db',
+      ADMIN_PASSWORD: 'smoke123',
+      INGEST_SECRET: 'smoke-secret',
+      ALLOWED_ORIGINS: 'http://localhost:5173',
+      SEED_DEMO: '1',
     },
   },
 ];
