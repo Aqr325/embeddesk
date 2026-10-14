@@ -25,6 +25,8 @@ import {
   Bot,
   Lightbulb,
   Workflow,
+  BarChart3,
+  Radio,
 } from 'lucide-react';
 import { useAdmin } from '../hooks/useAdmin';
 import { useAuth } from '../hooks/useAuth';
@@ -42,9 +44,11 @@ import { LlmSettings } from '../components/LlmSettings';
 import { InsightsPanel } from '../components/InsightsPanel';
 import { KnowledgeGapPanel } from '../components/KnowledgeGapPanel';
 import { WorkflowRules } from '../components/WorkflowRules';
+import { ImpactDashboard } from '../components/ImpactDashboard';
+import { TelemetryPanel } from '../components/TelemetryPanel';
 import { Skeleton } from '../components/ui/Skeleton';
 
-type Tab = 'conversations' | 'tickets' | 'faqs' | 'gaps' | 'workflow' | 'insights' | 'employees' | 'data' | 'channels' | 'ai';
+type Tab = 'conversations' | 'tickets' | 'faqs' | 'gaps' | 'workflow' | 'insights' | 'employees' | 'data' | 'channels' | 'ai' | 'impact' | 'telemetry';
 
 function formatBytes(n: number): string {
   if (!n) return '0 B';
@@ -130,6 +134,8 @@ export function AdminPage() {
     tabs.push({ id: 'workflow', label: '工作流', icon: <Workflow size={15} /> });
     tabs.push({ id: 'channels', label: '渠道接入', icon: <Globe size={15} />, count: admin.sites.length });
     tabs.push({ id: 'ai', label: '模型配置', icon: <Bot size={15} /> });
+    tabs.push({ id: 'impact', label: 'AI 成效', icon: <BarChart3 size={15} /> });
+    tabs.push({ id: 'telemetry', label: '设备遥测', icon: <Radio size={15} /> });
   }
 
   const visibleTickets = mineOnly && username ? admin.tickets.filter((t) => t.assignee === username) : admin.tickets;
@@ -150,6 +156,38 @@ export function AdminPage() {
   useEffect(() => {
     loadCsat();
   }, [loadCsat]);
+
+  /* AI 成效看板 + 设备遥测看板（管理后台专属，需 canManage） */
+  const [impact, setImpact] = useState<import('../types').ImpactData | null>(null);
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [telemetry, setTelemetry] = useState<{ total: number; anomalies: number; recent: import('../types').DeviceTelemetry[] } | null>(null);
+  const [telemetryLoading, setTelemetryLoading] = useState(false);
+  const loadImpact = useCallback(async () => {
+    setImpactLoading(true);
+    try {
+      setImpact(await api.getImpact());
+    } catch {
+      /* 401 全局拦截，静默 */
+    } finally {
+      setImpactLoading(false);
+    }
+  }, []);
+  const loadTelemetry = useCallback(async () => {
+    setTelemetryLoading(true);
+    try {
+      setTelemetry(await api.getTelemetry(100));
+    } catch {
+      /* 401 全局拦截，静默 */
+    } finally {
+      setTelemetryLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (canManage) {
+      loadImpact();
+      loadTelemetry();
+    }
+  }, [canManage, loadImpact, loadTelemetry]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -362,6 +400,60 @@ export function AdminPage() {
                     此处配置将实时生效于全渠道 AI 客服（web / 嵌入 / 邮件 / IM）。改动保存后无需重启服务。
                   </p>
                   <LlmSettings />
+                </div>
+              )}
+              {tab === 'impact' && (
+                <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 animate-fade-in">
+                  <div className="flex items-center gap-2 mb-1">
+                    <BarChart3 size={16} className="text-accent" />
+                    <h3 className="text-sm font-medium">AI 成效看板</h3>
+                    <span className="text-xs text-muted-foreground">自助解决率 · 副驾驶采纳率 · 工作流自动执行率 · 知识盲区收敛率</span>
+                    <button
+                      onClick={loadImpact}
+                      disabled={impactLoading}
+                      className="ml-auto inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 min-h-[36px] max-sm:min-h-[40px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50"
+                      title="刷新成效数据"
+                    >
+                      <RefreshCw size={13} className={impactLoading ? 'animate-spin' : ''} /> 刷新
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    把企业知识助手 / 工作流自动化 / AI 副驾驶三大支柱的「能力」转化为「可量化的商业价值」。
+                  </p>
+                  {impact ? (
+                    <ImpactDashboard data={impact} />
+                  ) : impactLoading ? (
+                    <Skeleton className="h-40 w-full" />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">成效数据加载中…</p>
+                  )}
+                </div>
+              )}
+              {tab === 'telemetry' && (
+                <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 animate-fade-in">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Radio size={16} className="text-accent" />
+                    <h3 className="text-sm font-medium">设备遥测看板</h3>
+                    <span className="text-xs text-muted-foreground">端侧遥测异常 → 自动建单 / 升级 / 通知（端云协同）</span>
+                    <button
+                      onClick={loadTelemetry}
+                      disabled={telemetryLoading}
+                      className="ml-auto inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 min-h-[36px] max-sm:min-h-[40px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50"
+                      title="刷新遥测数据"
+                    >
+                      <RefreshCw size={13} className={telemetryLoading ? 'animate-spin' : ''} /> 刷新
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    贴合无人机反制 / IoT 主题：设备周期上报遥测快照，异常命中即自动建工单并触发智能升级。
+                  </p>
+                  {telemetry ? (
+                    <TelemetryPanel data={telemetry} onMutate={loadTelemetry} />
+                  ) : telemetryLoading ? (
+                    <Skeleton className="h-40 w-full" />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">遥测数据加载中…</p>
+                  )}
                 </div>
               )}
             </div>

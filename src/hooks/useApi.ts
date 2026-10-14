@@ -15,6 +15,9 @@ import type {
   WorkflowRule,
   WorkflowConditions,
   WorkflowActions,
+  ImpactData,
+  DeviceTelemetry,
+  AgentRunRow,
 } from '../types';
 
 const BASE = '/api';
@@ -461,4 +464,17 @@ export const api = {
   ) => http<{ rule: WorkflowRule }>(`/admin/workflow/rules/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteWorkflowRule: (id: string) => http<{ success: boolean }>(`/admin/workflow/rules/${id}`, { method: 'DELETE' }),
+
+  /* ---------- AI 成效看板（商业价值量化） ---------- */
+  getImpact: () => http<ImpactData>('/admin/impact'),
+
+  /* ---------- 端侧遥测看板（设备异常自动建单） ---------- */
+  getTelemetry: (limit = 100) =>
+    http<{ total: number; anomalies: number; recent: DeviceTelemetry[] }>(`/admin/telemetry?limit=${limit}`),
+
+  /* ---------- 智能体编排留痕（可视化推理链路） ---------- */
+  getAgentRuns: (sessionId?: string) =>
+    http<{ runs: AgentRunRow[]; total: number }>(
+      `/admin/agent-runs${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`,
+    ),
 };

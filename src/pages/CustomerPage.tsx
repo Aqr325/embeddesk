@@ -8,6 +8,7 @@ import { MessageBubble } from '../components/MessageBubble';
 import { ChatInput } from '../components/ChatInput';
 import { IntentBadge } from '../components/IntentBadge';
 import { CustomerProfilePanel } from '../components/CustomerProfilePanel';
+import { AgentTraceView } from '../components/AgentTraceView';
 import { STATUS_LABELS } from '../types';
 import type { Faq } from '../types';
 
@@ -129,6 +130,13 @@ export function CustomerPage() {
                 rating={m.id ? ratings[m.id] : undefined}
                 onRate={(r, t, c, res) => rate(m.id, r, t, c, res)}
               />
+              {m.role === 'assistant' && m.trace && (
+                <div className="flex justify-start mt-1.5">
+                  <div className="ml-10 max-w-[88%]">
+                    <AgentTraceView trace={m.trace} />
+                  </div>
+                </div>
+              )}
               {m.role === 'assistant' && m.recommendations && m.recommendations.length > 0 && (
                 <div className="flex justify-start mt-1.5">
                   <div className="ml-10 max-w-[80%] space-y-1.5">

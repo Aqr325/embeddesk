@@ -42,6 +42,9 @@ import {
 import { ingestExternalMessage, type ChannelType } from './channels.js';
 import { summarizeConversation } from './summarize.js';
 import { escalateFromContext, higherPriority } from './escalation.js';
+import { runOrchestration } from './orchestrator.js';
+import { ingestTelemetry } from './telemetry.js';
+import { getImpact } from './impact.js';
 import { resolveOrderContext, withTimeout, listOrders } from './orders.js';
 import { truncate } from './nlp.js';
 import { seedDemoData } from './seed.js';
@@ -328,6 +331,22 @@ async function runChatPipeline(
       userTurns: db.countUserMessages(session.id),
       negativeCount,
     });
+
+    /* ---- ④-b 智能体编排中枢：把意图/知识/情感/工作流/主动关怀统一编排为可见推理链路 ---- */
+    const finalAction: 'answer' | 'handoff' | 'ticket' | 'proactive_alert' = decision.shouldHandoff ? 'handoff' : 'answer';
+    const trace = await runOrchestration({
+      sessionId: session.id,
+      message: String(message),
+      intent: intentResult.intent,
+      faqHits,
+      topScore,
+      hitIds,
+      history: history.map((m) => ({ role: m.role, content: m.content })),
+      channel: session.channel,
+      customerId: session.customer_id,
+      finalAction,
+    });
+    sse(res, { type: 'agentTrace', trace });
 
     // 综合优先级（handoff 已判定"要转"，此处决定"多急、给谁"）：结合客户等级、知识盲区、长会话、负面情绪
     const tierForTicket = session.customer_id ? (db.getCustomerProfile(session.customer_id)?.tier || 'new') : 'new';
@@ -1372,6 +1391,46 @@ app.delete('/api/admin/workflow/rules/:id', requireAuth, requireRole('admin', 'm
   const ok = deleteRule(req.params.id);
   if (!ok) throw new HttpError(404, '规则不存在');
   res.json({ success: true });
+}));
+
+/** 端侧遥测上报（设备 → 服务端）：异常检测命中即自动建单 + 升级 + 通知（贴合 IoT/无人机反制主题） */
+app.post('/api/telemetry', asyncHandler(async (req, res) => {
+  const body = req.body || {};
+  const deviceId = asString(body?.deviceId, { name: 'deviceId' });
+  if (!deviceId) throw new HttpError(400, 'deviceId 必填');
+  const result = ingestTelemetry({
+    deviceId,
+    product: body?.product ? String(body.product) : undefined,
+    model: body?.model ? String(body.model) : undefined,
+    snapshot: body?.snapshot && typeof body.snapshot === 'object' ? body.snapshot : {},
+  });
+  res.json(result);
+}));
+
+/** 设备遥测看板数据（管理后台） */
+app.get('/api/admin/telemetry', requireAuth, asyncHandler(async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  const rows = db.listDeviceTelemetry(limit);
+  const total = db.countDeviceTelemetry();
+  const anomalies = db.countDeviceTelemetry(true);
+  res.json({
+    total,
+    anomalies,
+    recent: rows,
+  });
+}));
+
+/** AI 成效看板数据（管理后台） */
+app.get('/api/admin/impact', requireAuth, asyncHandler(async (req, res) => {
+  res.json(getImpact());
+}));
+
+/** 智能体编排留痕（管理后台）：可视化「AI 如何决策」的推理链路，可选按会话过滤 */
+app.get('/api/admin/agent-runs', requireAuth, asyncHandler(async (req, res) => {
+  const sessionId = req.query.sessionId ? String(req.query.sessionId) : undefined;
+  let runs = db.listAgentRuns(500);
+  if (sessionId) runs = runs.filter((r) => r.session_id === sessionId);
+  res.json({ runs, total: runs.length });
 }));
 
 /** 知识库检索预览（管理后台调试用） */

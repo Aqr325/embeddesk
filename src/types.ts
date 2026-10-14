@@ -61,6 +61,8 @@ export interface ChatMessage {
   rated?: boolean;
   /** 「猜你想问」推荐（知识库未命中时由服务端下发） */
   recommendations?: Array<{ id: string; question: string; category: string; score: number }>;
+  /** 智能体编排中枢推理链路（消费 SSE `agentTrace` 事件，可视化「AI 如何决策」） */
+  trace?: AgentTrace;
 }
 
 export interface SessionSummary {
@@ -106,6 +108,15 @@ export interface CopilotSuggestion {
   kbHits: CopilotKbHit[];
   insights: CopilotInsight;
   actions: string[];
+  /** 主动式客户关怀风险评分（0-100；超阈值需主动干预） */
+  risk?: {
+    riskScore: number;
+    riskLevel: string;
+    signals: string[];
+    recommendedAction: string | null;
+    shouldIntervene: boolean;
+    careTag?: string;
+  };
 }
 export interface CopilotExecuteResult {
   ok: boolean;
@@ -299,6 +310,108 @@ export const INTENT_LABELS: Record<string, string> = {
   other: '其它咨询',
   general: '通用政策',
 };
+
+/* ============================ 智能体编排中枢（Agent Orchestration Hub）============================ */
+export type OrchestratorStepStatus = 'ok' | 'skip' | 'warn';
+export interface OrchestratorStep {
+  id: string;
+  label: string;
+  status: OrchestratorStepStatus;
+  detail: string;
+  latencyMs: number;
+}
+export type FinalAction = 'answer' | 'handoff' | 'ticket' | 'proactive_alert';
+export interface AgentTrace {
+  runId: string;
+  sessionId: string | null;
+  channel: string | null;
+  startedAt: number;
+  finishedAt: number;
+  steps: OrchestratorStep[];
+  intent: string | null;
+  intentLabel: string;
+  knowledgeHit: boolean;
+  topScore: number;
+  sentiment: string | null;
+  sentimentScore: number;
+  riskScore: number;
+  riskLevel: string;
+  workflowMatched: string[];
+  finalAction: FinalAction;
+  model: string | null;
+  source: string | null;
+  proactiveAction: string | null;
+}
+
+/* ============================ AI 成效看板（Impact Dashboard）============================ */
+export interface ImpactKpi {
+  /** 自助解决率：编排以「知识库直答」闭环的会话占比 */
+  selfServiceRate: number;
+  /** 副驾驶采纳率：由 AI 副驾驶一键执行创建的工单占比 */
+  copilotAdoptionRate: number;
+  /** 工作流自动执行率：编排命中工作流规则的会话占比 */
+  workflowAutoRate: number;
+  /** 知识盲区收敛率：已补全/处理的盲区占历史盲区总量比例 */
+  gapClosureRate: number;
+  /** 平均编排时延（ms） */
+  avgLatencyMs: number;
+}
+export interface ImpactData {
+  source: 'db' | 'empty';
+  windowDays: number;
+  totals: {
+    runs: number;
+    tickets: number;
+    copilotTickets: number;
+    workflowHits: number;
+    gaps: number;
+    gapsResolved: number;
+    anomalies: number;
+  };
+  kpis: ImpactKpi;
+  /** 动作分布趋势（按天）：自助回复 vs 转人工 */
+  actionTrend: Array<{ date: string; answer: number; handoff: number }>;
+  /** 风险趋势（按天）：平均风险分 + 高风险会话数 */
+  riskTrend: Array<{ date: string; avgRisk: number; high: number }>;
+  /** 工作流规则命中 TOP */
+  workflowTop: Array<{ name: string; hits: number }>;
+  /** 本赛事数据为演示数据（方案 §7 统一口径），前端显式标注 */
+  demo: boolean;
+}
+
+/* ============================ 端侧遥测（Edge Telemetry）============================ */
+export interface DeviceTelemetry {
+  id: string;
+  device_id: string;
+  product: string | null;
+  model: string | null;
+  snapshot: string | null;
+  anomaly: number;
+  anomaly_reason: string | null;
+  ticket_id: string | null;
+  created_at: string;
+}
+
+/* ============================ 智能体编排留痕（agent_runs 列表）============================ */
+export interface AgentRunRow {
+  id: string;
+  session_id: string | null;
+  channel: string | null;
+  intent: string | null;
+  knowledge_hit: number;
+  top_score: number;
+  sentiment: string | null;
+  sentiment_score: number | null;
+  risk_score: number | null;
+  risk_level: string | null;
+  workflow_matched: string | null;
+  final_action: string | null;
+  model: string | null;
+  source: string | null;
+  steps: string | null;
+  latency_ms: number | null;
+  created_at: string;
+}
 
 export const STATUS_LABELS: Record<string, string> = {
   active: '进行中',

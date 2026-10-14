@@ -450,6 +450,59 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // 智能体编排中枢：agent_runs（每次对话编排推理链路留痕，供可观测与成效看板聚合）。
+    version: 15,
+    name: '智能体编排中枢：agent_runs（推理链路留痕）',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_runs (
+          id TEXT PRIMARY KEY,
+          session_id TEXT,
+          channel TEXT,
+          intent TEXT,
+          knowledge_hit INTEGER NOT NULL DEFAULT 0,
+          top_score REAL NOT NULL DEFAULT 0,
+          sentiment TEXT,
+          sentiment_score REAL,
+          risk_score INTEGER,
+          risk_level TEXT,
+          workflow_matched TEXT,            -- JSON 数组：命中的工作流规则名
+          final_action TEXT,               -- answer | handoff | ticket | proactive_alert
+          model TEXT,
+          source TEXT,
+          steps TEXT,                      -- JSON 数组：编排各子步骤（可见推理链路）
+          latency_ms INTEGER,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_ar_session ON agent_runs(session_id);
+        CREATE INDEX IF NOT EXISTS idx_ar_action ON agent_runs(final_action);
+        CREATE INDEX IF NOT EXISTS idx_ar_created ON agent_runs(created_at);
+      `);
+    },
+  },
+  {
+    // 端侧遥测异常建单：device_telemetry（设备遥测快照 + 异常判定 + 关联工单）。
+    version: 16,
+    name: '端侧遥测：device_telemetry（设备异常遥测建单）',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS device_telemetry (
+          id TEXT PRIMARY KEY,
+          device_id TEXT NOT NULL,
+          product TEXT,
+          model TEXT,
+          snapshot TEXT,                   -- JSON 遥测快照（电压/温度/信号/在线时长等）
+          anomaly INTEGER NOT NULL DEFAULT 0,
+          anomaly_reason TEXT,
+          ticket_id TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_dt_device ON device_telemetry(device_id);
+        CREATE INDEX IF NOT EXISTS idx_dt_anomaly ON device_telemetry(anomaly, created_at);
+      `);
+    },
+  },
 ];
 
 /** 按 user_version 顺序应用未执行的迁移，保证 schema 演进可追踪、幂等、可重放 */
@@ -2072,6 +2125,73 @@ export function bumpWorkflowRuleHits(ids: string[]): void {
 
 export function countWorkflowRules(onlyEnabled = true): number {
   const sql = onlyEnabled ? 'SELECT COUNT(*) AS n FROM workflow_rules WHERE enabled = 1' : 'SELECT COUNT(*) AS n FROM workflow_rules';
+  return (db.prepare(sql).get() as { n: number }).n;
+}
+
+/* ============================ 智能体编排留痕（agent_runs，v15）============================ */
+
+export interface DbAgentRun {
+  id: string;
+  session_id: string | null;
+  channel: string | null;
+  intent: string | null;
+  knowledge_hit: number;
+  top_score: number;
+  sentiment: string | null;
+  sentiment_score: number | null;
+  risk_score: number | null;
+  risk_level: string | null;
+  workflow_matched: string | null;
+  final_action: string | null;
+  model: string | null;
+  source: string | null;
+  steps: string | null;
+  latency_ms: number | null;
+  created_at: string;
+}
+
+export function insertAgentRun(run: DbAgentRun): void {
+  db.prepare(
+    `INSERT INTO agent_runs (id, session_id, channel, intent, knowledge_hit, top_score, sentiment, sentiment_score, risk_score, risk_level, workflow_matched, final_action, model, source, steps, latency_ms, created_at)
+     VALUES (@id, @session_id, @channel, @intent, @knowledge_hit, @top_score, @sentiment, @sentiment_score, @risk_score, @risk_level, @workflow_matched, @final_action, @model, @source, @steps, @latency_ms, @created_at)`,
+  ).run(run);
+}
+
+export function listAgentRuns(limit = 200): DbAgentRun[] {
+  return db.prepare(`SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT ?`).all(limit) as DbAgentRun[];
+}
+
+export function countAgentRuns(): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM agent_runs').get() as { n: number }).n;
+}
+
+/* ============================ 端侧遥测（device_telemetry，v16）============================ */
+
+export interface DbDeviceTelemetry {
+  id: string;
+  device_id: string;
+  product: string | null;
+  model: string | null;
+  snapshot: string | null;
+  anomaly: number;
+  anomaly_reason: string | null;
+  ticket_id: string | null;
+  created_at: string;
+}
+
+export function insertDeviceTelemetry(rec: DbDeviceTelemetry): void {
+  db.prepare(
+    `INSERT INTO device_telemetry (id, device_id, product, model, snapshot, anomaly, anomaly_reason, ticket_id, created_at)
+     VALUES (@id, @device_id, @product, @model, @snapshot, @anomaly, @anomaly_reason, @ticket_id, @created_at)`,
+  ).run(rec);
+}
+
+export function listDeviceTelemetry(limit = 200): DbDeviceTelemetry[] {
+  return db.prepare(`SELECT * FROM device_telemetry ORDER BY created_at DESC LIMIT ?`).all(limit) as DbDeviceTelemetry[];
+}
+
+export function countDeviceTelemetry(anomalyOnly = false): number {
+  const sql = anomalyOnly ? 'SELECT COUNT(*) AS n FROM device_telemetry WHERE anomaly = 1' : 'SELECT COUNT(*) AS n FROM device_telemetry';
   return (db.prepare(sql).get() as { n: number }).n;
 }
 

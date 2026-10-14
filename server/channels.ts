@@ -49,6 +49,7 @@ import { geminiConfigured } from './geminiAgent.js';
 import { summarizeConversation } from './summarize.js';
 import { analyzeSentiment } from './sentiment.js';
 import { escalateFromContext, higherPriority, notifyEscalation } from './escalation.js';
+import { runOrchestration } from './orchestrator.js';
 import { getResolvedConfig } from './llmConfig.js';
 
 export type ChannelType = 'web' | 'embed' | 'email' | 'im';
@@ -320,6 +321,20 @@ export async function ingestExternalMessage(input: IngestInput): Promise<IngestR
       missStreak: db.countRecentMisses(session.id, 3),
       userTurns: db.countUserMessages(session.id),
       negativeCount,
+    });
+
+    /* ---- ④-b 智能体编排中枢：异步渠道同样走统一编排留痕（无实时 SSE，仅落库供看板聚合） ---- */
+    void runOrchestration({
+      sessionId: session.id,
+      message,
+      intent: intentResult.intent,
+      faqHits,
+      topScore,
+      hitIds,
+      history: history.map((m) => ({ role: m.role, content: m.content })),
+      channel: input.channel,
+      customerId,
+      finalAction: decision.shouldHandoff ? 'handoff' : 'answer',
     });
 
     let reply = '';

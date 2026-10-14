@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Copy, RefreshCw, Check, BookOpen, Lightbulb, UserCog, ToggleLeft, ToggleRight, Zap, ArrowUpCircle } from 'lucide-react';
+import { Sparkles, Copy, RefreshCw, Check, BookOpen, Lightbulb, UserCog, ToggleLeft, ToggleRight, Zap, ArrowUpCircle, ShieldAlert } from 'lucide-react';
 import { api } from '../hooks/useApi';
 import type { CopilotSuggestion, CopilotInsight } from '../types';
 
@@ -200,6 +200,35 @@ export function CopilotPanel({ sessionId, customerId, message, primaryIntent }: 
             </div>
             <InsightChips insights={data.insights} />
           </div>
+
+          {/* 主动关怀风险（被动响应 → 主动干预） */}
+          {data.risk && data.risk.riskLevel !== 'low' && (
+            <div className={`rounded-lg border p-2.5 ${
+              data.risk.riskLevel === 'high'
+                ? 'border-destructive/40 bg-destructive/10'
+                : 'border-amber-500/30 bg-amber-500/10'
+            }`}>
+              <div className={`text-xs font-medium inline-flex items-center gap-1 ${
+                data.risk.riskLevel === 'high' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'
+              }`}>
+                <ShieldAlert size={12} />
+                主动关怀风险 {data.risk.riskLevel}（{data.risk.riskScore}/100）
+                {data.risk.shouldIntervene && <span className="ml-1 px-1 py-0.5 rounded bg-destructive text-white text-[10px]">需主动干预</span>}
+              </div>
+              {data.risk.recommendedAction && (
+                <p className="text-xs text-foreground/85 mt-1">{data.risk.recommendedAction}</p>
+              )}
+              {data.risk.signals.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {data.risk.signals.map((s, i) => (
+                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/60 text-muted-foreground">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 知识库参考 */}
           {data.kbHits.length > 0 && (

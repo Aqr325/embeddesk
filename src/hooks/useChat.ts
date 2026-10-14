@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type SessionDTO } from './useApi';
-import type { AppMeta, ChatMessage, IntentId, TurnAnalysis, HandoffInfo } from '../types';
+import type { AppMeta, ChatMessage, IntentId, TurnAnalysis, HandoffInfo, AgentTrace } from '../types';
 
 export interface RatingInfo {
   rating: number;
@@ -144,6 +144,10 @@ export function useChat() {
           }
           case 'notice': {
             patchAssistant({ noticed: (evt.message as string) ?? '系统提示' });
+            break;
+          }
+          case 'agentTrace': {
+            patchAssistant({ trace: (evt.trace as AgentTrace) ?? undefined });
             break;
           }
           case 'text': {

@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { persistTicket } from './store.js';
 import { computePriority, computeSlaDue, assignTicket } from './tickets.js';
 import { escalateFromContext, higherPriority, notifyEscalation } from './escalation.js';
+import { computeProactiveRisk } from './proactive.js';
 import { logger } from './logger.js';
 
 export interface CopilotKbHit {
@@ -47,6 +48,8 @@ export interface CopilotSuggestion {
   insights: CopilotInsight;
   /** 下一步建议动作 */
   actions: string[];
+  /** 主动式客户关怀风险评分（0-100；超阈值需主动干预） */
+  risk: import('./proactive.js').ProactiveResult;
 }
 
 function scoreToSentiment(s?: number): CopilotInsight['sentiment'] {
@@ -111,7 +114,22 @@ export async function getCopilotSuggestions(opts: {
     actions.push('重点客户，优先响应并同步客户经理');
   }
 
-  return { message, draftReply, kbHits: hits, insights, actions };
+  // ③-b 主动关怀风险评分：把「被动响应」升级为「主动干预」（情绪趋势 + 未解决轮次 + 重复接触 + 意图 + 客户等级）
+  const history = opts.sessionId ? db.getMessagesBySession(opts.sessionId).map((m) => ({ role: m.role, content: m.content })) : [];
+  const risk = computeProactiveRisk({
+    message,
+    history,
+    intent,
+    customerTier: profile?.tier ?? undefined,
+    unresolvedStreak,
+    hasOpenTicket: openTicket,
+    sessionId: opts.sessionId,
+  });
+  if (risk.riskLevel !== 'low') {
+    actions.push(`主动关怀风险 ${risk.riskLevel}（${risk.riskScore}/100）：${risk.recommendedAction ?? '持续观察'}`);
+  }
+
+  return { message, draftReply, kbHits: hits, insights, actions, risk };
 }
 
 /* ============================ 坐席一键执行（AI 副驾驶） ============================ */

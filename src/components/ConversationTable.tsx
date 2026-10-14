@@ -5,8 +5,10 @@ import type { ConversationRow } from '../types';
 import { STATUS_LABELS } from '../types';
 import { IntentBadge } from '../components/IntentBadge';
 import { CopilotPanel } from './CopilotPanel';
+import { AgentTraceView, rowToTrace } from './AgentTraceView';
 import { api } from '../hooks/useApi';
 import type { AdminFilters, Pagination } from '../hooks/useAdmin';
+import type { AgentRunRow } from '../types';
 
 interface Props {
   conversations: ConversationRow[];
@@ -40,6 +42,7 @@ const CHANNEL_OPTIONS = [
 export function ConversationTable({ conversations, filters, onFilter, pagination, onPageChange }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, { content: string; role: string }[]>>({});
+  const [runs, setRuns] = useState<Record<string, AgentRunRow[]>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const toggle = async (id: string) => {
@@ -56,6 +59,14 @@ export function ConversationTable({ conversations, filters, onFilter, pagination
           ...prev,
           [id]: data.messages.map((m) => ({ content: m.content, role: m.role })),
         }));
+        if (!runs[id]) {
+          try {
+            const r = await api.getAgentRuns(id);
+            setRuns((prev) => ({ ...prev, [id]: r.runs }));
+          } catch {
+            /* 编排留痕缺失不阻断主流程 */
+          }
+        }
       } catch {
         setDetail((prev) => ({ ...prev, [id]: [] }));
       } finally {
@@ -221,6 +232,16 @@ export function ConversationTable({ conversations, filters, onFilter, pagination
                             message={(detail[c.id] ?? []).filter((m) => m.role === 'user').pop()?.content ?? ''}
                             primaryIntent={c.primary_intent}
                           />
+                          {(runs[c.id]?.length ?? 0) > 0 && (
+                            <div className="mt-3 space-y-2">
+                              <div className="text-[11px] font-medium text-muted-foreground">
+                                智能体推理链路（{(runs[c.id] ?? []).length}）
+                              </div>
+                              {(runs[c.id] ?? []).map((r) => (
+                                <AgentTraceView key={r.id} trace={rowToTrace(r)} />
+                              ))}
+                            </div>
+                          )}
                         </>
                       )}
                     </td>
