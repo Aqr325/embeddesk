@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Copy, RefreshCw, Check, BookOpen, Lightbulb, UserCog } from 'lucide-react';
+import { Sparkles, Copy, RefreshCw, Check, BookOpen, Lightbulb, UserCog, ToggleLeft, ToggleRight, Zap, ArrowUpCircle } from 'lucide-react';
 import { api } from '../hooks/useApi';
 import type { CopilotSuggestion, CopilotInsight } from '../types';
 
@@ -65,6 +65,11 @@ export function CopilotPanel({ sessionId, customerId, message, primaryIntent }: 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // 实时模式：坐席盯着会话时每 5s 自动刷新建议（AI 副驾驶常驻）
+  const [realtime, setRealtime] = useState(false);
+  // 一键执行（AI 副驾驶）：坐席确认后直接建单 / 升级
+  const [executing, setExecuting] = useState<string | null>(null);
+  const [execMsg, setExecMsg] = useState<string | null>(null);
 
   const run = async () => {
     if (!message.trim()) {
@@ -91,6 +96,16 @@ export function CopilotPanel({ sessionId, customerId, message, primaryIntent }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, message]);
 
+  // 实时模式轮询：开启后每 5s 静默刷新（会话/消息变化会重置计时）
+  useEffect(() => {
+    if (!realtime || !sessionId || !message.trim()) return;
+    const timer = setInterval(() => {
+      void run();
+    }, 5000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realtime, sessionId, message]);
+
   const copyDraft = async () => {
     if (!data?.draftReply) return;
     try {
@@ -102,11 +117,41 @@ export function CopilotPanel({ sessionId, customerId, message, primaryIntent }: 
     }
   };
 
+  const execute = async (action: 'create_ticket' | 'escalate') => {
+    if (!sessionId) {
+      setExecMsg('无会话上下文，无法执行');
+      return;
+    }
+    setExecuting(action);
+    setExecMsg(null);
+    try {
+      const r = await api.copilotExecute({ sessionId, action, message: message || undefined });
+      setExecMsg(r.message);
+      if (r.ok && r.ticketId) {
+        // 建单后刷新建议（未结工单信号会更新）
+        void run();
+      }
+    } catch (e) {
+      setExecMsg(e instanceof Error ? e.message : '执行失败');
+    } finally {
+      setExecuting(null);
+    }
+  };
+
   return (
     <div className="rounded-xl border border-accent/30 bg-accent/[0.04] p-3 mt-3">
       <div className="flex items-center gap-2 mb-2">
         <Sparkles size={14} className="text-accent" />
         <span className="text-xs font-medium text-accent">坐席 Copilot 辅助</span>
+        <button
+          onClick={() => setRealtime((v) => !v)}
+          className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg border transition-base ${
+            realtime ? 'border-emerald-400 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : 'border-border text-muted-foreground hover:border-accent hover:text-accent'
+          }`}
+          title="实时模式：每 5 秒自动刷新建议"
+        >
+          {realtime ? <ToggleRight size={13} /> : <ToggleLeft size={13} />} 实时
+        </button>
         <button
           onClick={run}
           disabled={loading}
@@ -189,6 +234,32 @@ export function CopilotPanel({ sessionId, customerId, message, primaryIntent }: 
               ))}
             </ul>
           </div>
+
+          {/* 一键执行（AI 副驾驶）：坐席确认即落地 */}
+          {sessionId && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-1.5">一键执行</div>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => execute('create_ticket')}
+                  disabled={executing === 'create_ticket'}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-accent/40 text-accent hover:bg-accent hover:text-white transition-base disabled:opacity-50"
+                  title="基于当前会话一键创建工单（含优先级/SLA/坐席分配）"
+                >
+                  <Zap size={12} /> {executing === 'create_ticket' ? '建单中…' : '一键建单'}
+                </button>
+                <button
+                  onClick={() => execute('escalate')}
+                  disabled={executing === 'escalate'}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border border-rose-400/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition-base disabled:opacity-50"
+                  title="一键升级转人工并通知值班"
+                >
+                  <ArrowUpCircle size={12} /> {executing === 'escalate' ? '升级中…' : '一键升级'}
+                </button>
+              </div>
+              {execMsg && <div className="text-xs mt-1.5 text-accent">{execMsg}</div>}
+            </div>
+          )}
 
           {primaryIntent && (
             <div className="text-[11px] text-muted-foreground/70">会话主意图：{primaryIntent}</div>

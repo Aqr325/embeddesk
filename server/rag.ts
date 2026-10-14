@@ -18,6 +18,7 @@ import { normalize } from './nlp.js';
 import { retrieveFaqs, type FaqHit } from './knowledge.js';
 import { retrieveVertex, vertexConfigured } from './vertexSearch.js';
 import { logger } from './logger.js';
+import { recordGap } from './knowledgeGap.js';
 
 /* ============================ ① 同义词 / 口语扩展 ============================ */
 
@@ -170,7 +171,7 @@ export function getRagStats(): {
  * RAG 检索：扩展 query → lexical 召回 →（可选）语义 RRF 融合 → 重排。
  * 返回与 knowledge.FaqHit 兼容的结构，可直接喂给 buildKnowledgeContext / buildRagContext。
  */
-export async function retrieveRag(
+async function retrieveRagInternal(
   query: string,
   intent?: string | null,
   topK = 3,
@@ -266,4 +267,23 @@ export function buildRagContext(hits: FaqHit[]): string {
       return `【引用 ${i + 1}｜相关度 ${(h.score * 100).toFixed(0)}%｜类目 ${h.category}${kw}】\nQ: ${h.question}\nA: ${h.answer}`;
     })
     .join('\n\n');
+}
+
+/* ============================ 知识盲区自学习接入 ============================ */
+
+/**
+ * RAG 检索入口（对外签名保持兼容，新增可选 gapSource 标注盲区来源渠道）。
+ * 在核心检索之上叠加一层「知识盲区自学习」：完全未命中时记录该问题，
+ * 供运营侧「发现盲区 → 一键补 FAQ → 盲区消解」自进化闭环使用。
+ */
+export async function retrieveRag(
+  query: string,
+  intent?: string | null,
+  topK = 3,
+  opts: { expand?: boolean } = {},
+  gapSource?: string | null,
+): Promise<FaqHit[]> {
+  const hits = await retrieveRagInternal(query, intent, topK, opts);
+  if (!hits.length) recordGap(query, intent ?? null, gapSource ?? 'chat');
+  return hits;
 }

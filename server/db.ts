@@ -399,6 +399,57 @@ const migrations: Migration[] = [
       ensureColumn('tickets', 'device_snapshot', 'device_snapshot TEXT');
     },
   },
+  {
+    // 知识盲区自学习（企业知识助手）：knowledge_gaps 记录「知识库未命中」的客户真实问题，
+    // 按归一化 query 聚合计数，驱动运营侧「发现盲区 → 一键补 FAQ → 盲区消解」的自进化闭环。
+    version: 13,
+    name: '知识盲区自学习：knowledge_gaps（未命中问题聚类，驱动知识库补全）',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS knowledge_gaps (
+          id TEXT PRIMARY KEY,
+          query_key TEXT NOT NULL UNIQUE,
+          query TEXT NOT NULL,
+          intent TEXT,
+          source TEXT,
+          miss_count INTEGER NOT NULL DEFAULT 1,
+          first_seen TEXT NOT NULL,
+          last_seen TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',  -- pending | resolved | dismissed
+          resolved_faq_id TEXT,
+          resolved_at TEXT,
+          sample_session TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_kg_status ON knowledge_gaps(status);
+        CREATE INDEX IF NOT EXISTS idx_kg_miss ON knowledge_gaps(miss_count DESC, last_seen DESC);
+      `);
+    },
+  },
+  {
+    // 工作流自动化：workflow_rules「条件 → 动作」规则引擎。
+    // 运营在后台可视化编排（意图/情绪/客户等级/渠道/关键词/未解决轮次 → 升级/建单/优先级/通知/标签），
+    // 对所有建单路径统一生效，与情感升级引擎互补（只增强、不削弱既有决策）。
+    version: 14,
+    name: '工作流自动化：workflow_rules（条件→动作规则引擎）',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS workflow_rules (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          priority INTEGER NOT NULL DEFAULT 100,
+          conditions TEXT NOT NULL,
+          actions TEXT NOT NULL,
+          hit_count INTEGER NOT NULL DEFAULT 0,
+          last_hit_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_wf_enabled ON workflow_rules(enabled, priority);
+      `);
+    },
+  },
 ];
 
 /** 按 user_version 顺序应用未执行的迁移，保证 schema 演进可追踪、幂等、可重放 */
@@ -1858,6 +1909,170 @@ export function getLatestSessionForVisitor(siteId: string, visitorId: string): D
       `SELECT * FROM sessions WHERE site_id = ? AND visitor_id = ? ORDER BY updated_at DESC LIMIT 1`,
     )
     .get(siteId, visitorId) as DbSession | undefined;
+}
+
+/* ============================ 知识盲区（Knowledge Gap，v13）============================ */
+
+export type KnowledgeGapStatus = 'pending' | 'resolved' | 'dismissed';
+
+export interface DbKnowledgeGap {
+  id: string;
+  query_key: string;
+  query: string;
+  intent: string | null;
+  source: string | null;
+  miss_count: number;
+  first_seen: string;
+  last_seen: string;
+  status: KnowledgeGapStatus;
+  resolved_faq_id: string | null;
+  resolved_at: string | null;
+  sample_session: string | null;
+}
+
+/** 记录一次知识库未命中：按 query_key 幂等聚合计数（同问题多次未命中合并） */
+export function recordKnowledgeGap(input: {
+  query: string;
+  queryKey: string;
+  intent?: string | null;
+  source?: string | null;
+  sessionId?: string | null;
+}): DbKnowledgeGap {
+  const id = crypto.randomUUID();
+  return db
+    .prepare(
+      `INSERT INTO knowledge_gaps (id, query_key, query, intent, source, miss_count, first_seen, last_seen, sample_session)
+       VALUES (@id, @queryKey, @query, @intent, @source, 1, datetime('now'), datetime('now'), @sessionId)
+       ON CONFLICT(query_key) DO UPDATE SET
+         miss_count = miss_count + 1,
+         last_seen = datetime('now'),
+         query = excluded.query,
+         intent = COALESCE(excluded.intent, knowledge_gaps.intent),
+         sample_session = COALESCE(excluded.sample_session, knowledge_gaps.sample_session)
+       RETURNING *`,
+    )
+    .get({
+      id,
+      queryKey: input.queryKey,
+      query: input.query,
+      intent: input.intent ?? null,
+      source: input.source ?? null,
+      sessionId: input.sessionId ?? null,
+    }) as DbKnowledgeGap;
+}
+
+export function getKnowledgeGaps(status: KnowledgeGapStatus = 'pending', limit = 100): DbKnowledgeGap[] {
+  return db
+    .prepare(
+      `SELECT * FROM knowledge_gaps WHERE status = ? ORDER BY miss_count DESC, last_seen DESC LIMIT ?`,
+    )
+    .all(status, limit) as DbKnowledgeGap[];
+}
+
+export function getKnowledgeGapById(id: string): DbKnowledgeGap | undefined {
+  return db.prepare('SELECT * FROM knowledge_gaps WHERE id = ?').get(id) as DbKnowledgeGap | undefined;
+}
+
+export function countKnowledgeGaps(status: KnowledgeGapStatus = 'pending'): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM knowledge_gaps WHERE status = ?').get(status) as { n: number }).n;
+}
+
+export function resolveKnowledgeGap(id: string, faqId?: string | null): boolean {
+  return (
+    db
+      .prepare(`UPDATE knowledge_gaps SET status = 'resolved', resolved_faq_id = ?, resolved_at = datetime('now') WHERE id = ?`)
+      .run(faqId ?? null, id).changes > 0
+  );
+}
+
+export function dismissKnowledgeGap(id: string): boolean {
+  return db.prepare(`UPDATE knowledge_gaps SET status = 'dismissed' WHERE id = ?`).run(id).changes > 0;
+}
+
+/* ============================ 工作流规则（Workflow Rules，v14）============================ */
+
+export interface DbWorkflowRule {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: number;
+  priority: number;
+  conditions: string;
+  actions: string;
+  hit_count: number;
+  last_hit_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listWorkflowRules(onlyEnabled = false): DbWorkflowRule[] {
+  const sql = onlyEnabled
+    ? 'SELECT * FROM workflow_rules WHERE enabled = 1 ORDER BY priority ASC, created_at ASC'
+    : 'SELECT * FROM workflow_rules ORDER BY priority ASC, created_at ASC';
+  return db.prepare(sql).all() as DbWorkflowRule[];
+}
+
+export function getWorkflowRule(id: string): DbWorkflowRule | undefined {
+  return db.prepare('SELECT * FROM workflow_rules WHERE id = ?').get(id) as DbWorkflowRule | undefined;
+}
+
+export function createWorkflowRule(input: {
+  name: string;
+  description?: string | null;
+  enabled?: number;
+  priority?: number;
+  conditions: string;
+  actions: string;
+}): DbWorkflowRule {
+  const now = new Date().toISOString();
+  const row: DbWorkflowRule = {
+    id: crypto.randomUUID(),
+    name: input.name,
+    description: input.description ?? null,
+    enabled: input.enabled ?? 1,
+    priority: input.priority ?? 100,
+    conditions: input.conditions,
+    actions: input.actions,
+    hit_count: 0,
+    last_hit_at: null,
+    created_at: now,
+    updated_at: now,
+  };
+  db.prepare(
+    `INSERT INTO workflow_rules (id, name, description, enabled, priority, conditions, actions, hit_count, last_hit_at, created_at, updated_at)
+     VALUES (@id, @name, @description, @enabled, @priority, @conditions, @actions, @hit_count, @last_hit_at, @created_at, @updated_at)`,
+  ).run(row);
+  return row;
+}
+
+export function updateWorkflowRule(
+  id: string,
+  patch: Partial<Pick<DbWorkflowRule, 'name' | 'description' | 'enabled' | 'priority' | 'conditions' | 'actions'>>,
+): DbWorkflowRule | undefined {
+  const cur = getWorkflowRule(id);
+  if (!cur) return undefined;
+  const next: DbWorkflowRule = { ...cur, ...patch, updated_at: new Date().toISOString() };
+  db.prepare(
+    `UPDATE workflow_rules SET name=@name, description=@description, enabled=@enabled, priority=@priority,
+       conditions=@conditions, actions=@actions, updated_at=@updated_at WHERE id=@id`,
+  ).run(next);
+  return next;
+}
+
+export function deleteWorkflowRule(id: string): boolean {
+  return db.prepare('DELETE FROM workflow_rules WHERE id = ?').run(id).changes > 0;
+}
+
+export function bumpWorkflowRuleHits(ids: string[]): void {
+  if (!ids.length) return;
+  const stmt = db.prepare("UPDATE workflow_rules SET hit_count = hit_count + 1, last_hit_at = datetime('now') WHERE id = ?");
+  const tx = db.transaction((list: string[]) => list.forEach((id) => stmt.run(id)));
+  tx(ids);
+}
+
+export function countWorkflowRules(onlyEnabled = true): number {
+  const sql = onlyEnabled ? 'SELECT COUNT(*) AS n FROM workflow_rules WHERE enabled = 1' : 'SELECT COUNT(*) AS n FROM workflow_rules';
+  return (db.prepare(sql).get() as { n: number }).n;
 }
 
 export default db;

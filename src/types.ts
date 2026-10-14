@@ -107,6 +107,63 @@ export interface CopilotSuggestion {
   insights: CopilotInsight;
   actions: string[];
 }
+export interface CopilotExecuteResult {
+  ok: boolean;
+  ticketId?: string;
+  priority?: string;
+  message: string;
+}
+
+/* ============================ 知识盲区自学习（企业知识助手）============================ */
+export interface KnowledgeGap {
+  id: string;
+  query: string;
+  intent: string | null;
+  source: string | null;
+  missCount: number;
+  firstSeen: string;
+  lastSeen: string;
+  status: string;
+  resolvedFaqId: string | null;
+  sampleSession: string | null;
+}
+export interface KnowledgeGapStats {
+  pending: number;
+  resolved: number;
+  dismissed: number;
+}
+
+/* ============================ 工作流自动化（规则引擎）============================ */
+export interface WorkflowConditions {
+  intent?: string[];
+  sentiment?: string[];
+  customerTier?: string[];
+  channel?: string[];
+  keywords?: string[];
+  unresolvedStreakGte?: number;
+  hasOpenTicket?: boolean;
+}
+export interface WorkflowActions {
+  escalate?: boolean;
+  createTicket?: boolean;
+  autoHandoff?: boolean;
+  notify?: boolean;
+  setPriority?: 'low' | 'medium' | 'high' | 'urgent';
+  tag?: string;
+}
+export interface WorkflowRule {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  priority: number;
+  conditions: WorkflowConditions;
+  actions: WorkflowActions;
+  hitCount: number;
+  lastHitAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Ticket {
   id: string;

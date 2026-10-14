@@ -14,6 +14,7 @@ import { logger } from './logger.js';
 import type { Sentiment } from './summarize.js';
 import type { TicketPriority } from './db.js';
 import { analyzeSentiment, type SentimentResult } from './sentiment.js';
+import { evaluateWorkflow } from './workflow.js';
 
 export interface EscalationDecision {
   escalate: boolean;
@@ -111,6 +112,12 @@ export function escalateFromContext(opts: {
   history?: Array<{ role: string; content: string }>;
   currentPriority?: TicketPriority;
   unresolved?: boolean;
+  /** 工作流自动化上下文（可选）：供规则引擎求值 */
+  channel?: string | null;
+  customerTier?: string | null;
+  intent?: string | null;
+  unresolvedStreak?: number;
+  hasOpenTicket?: boolean;
 }): { sentiment: Sentiment | null; sentimentScore: number; decision: EscalationDecision } {
   const senti: SentimentResult = analyzeSentiment(opts.message || '');
   const full = [
@@ -125,7 +132,28 @@ export function escalateFromContext(opts: {
     currentPriority: opts.currentPriority,
     unresolved: opts.unresolved,
   });
-  return { sentiment: senti.sentiment, sentimentScore: senti.score, decision };
+  // 工作流自动化：叠加运营自定义规则（只增强、不削弱既有升级决策）
+  const wf = evaluateWorkflow({
+    channel: opts.channel,
+    customerTier: opts.customerTier,
+    intent: opts.intent,
+    message: opts.message,
+    sentiment: senti.sentiment,
+    unresolvedStreak: opts.unresolvedStreak,
+    hasOpenTicket: opts.hasOpenTicket,
+  });
+  const merged: EscalationDecision = wf.matchedRules.length
+    ? {
+        escalate: decision.escalate || wf.forceEscalate || wf.forceCreateTicket,
+        priority: higherPriority(decision.priority, wf.priority || decision.priority),
+        reason: decision.reason
+          ? `${decision.reason}；命中工作流规则：${wf.matchedRules.join('、')}`
+          : `命中工作流规则：${wf.matchedRules.join('、')}`,
+        autoHandoff: decision.autoHandoff || wf.forceAutoHandoff,
+        notify: decision.notify || wf.forceNotify,
+      }
+    : decision;
+  return { sentiment: senti.sentiment, sentimentScore: senti.score, decision: merged };
 }
 
 /**

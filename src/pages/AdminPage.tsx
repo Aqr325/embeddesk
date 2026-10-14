@@ -23,6 +23,8 @@ import {
   Star,
   Smile,
   Bot,
+  Lightbulb,
+  Workflow,
 } from 'lucide-react';
 import { useAdmin } from '../hooks/useAdmin';
 import { useAuth } from '../hooks/useAuth';
@@ -38,9 +40,11 @@ import { ChannelManager } from '../components/ChannelManager';
 import { DataImport } from '../components/DataImport';
 import { LlmSettings } from '../components/LlmSettings';
 import { InsightsPanel } from '../components/InsightsPanel';
+import { KnowledgeGapPanel } from '../components/KnowledgeGapPanel';
+import { WorkflowRules } from '../components/WorkflowRules';
 import { Skeleton } from '../components/ui/Skeleton';
 
-type Tab = 'conversations' | 'tickets' | 'faqs' | 'insights' | 'employees' | 'data' | 'channels' | 'ai';
+type Tab = 'conversations' | 'tickets' | 'faqs' | 'gaps' | 'workflow' | 'insights' | 'employees' | 'data' | 'channels' | 'ai';
 
 function formatBytes(n: number): string {
   if (!n) return '0 B';
@@ -122,6 +126,8 @@ export function AdminPage() {
   if (canManage) {
     tabs.push({ id: 'employees', label: '员工管理', icon: <Users size={15} />, count: admin.employees.length });
     tabs.push({ id: 'data', label: '数据导入', icon: <FileUp size={15} /> });
+    tabs.push({ id: 'gaps', label: '知识盲区', icon: <Lightbulb size={15} /> });
+    tabs.push({ id: 'workflow', label: '工作流', icon: <Workflow size={15} /> });
     tabs.push({ id: 'channels', label: '渠道接入', icon: <Globe size={15} />, count: admin.sites.length });
     tabs.push({ id: 'ai', label: '模型配置', icon: <Bot size={15} /> });
   }
@@ -318,6 +324,8 @@ export function AdminPage() {
                 </div>
               )}
               {tab === 'faqs' && <FaqManager faqs={admin.faqs} onAdd={admin.addFaq} onDelete={admin.removeFaq} />}
+              {tab === 'gaps' && <KnowledgeGapPanel />}
+              {tab === 'workflow' && <WorkflowRules />}
               {tab === 'insights' && <InsightsPanel data={admin.insights} />}
               {tab === 'employees' && (
                 <EmployeeManager

@@ -99,7 +99,7 @@ export function createCsaAgentTools(ctx: CsaToolContext): CsaToolBundle {
     },
     async ({ query, intent }) => {
       captured.toolCalls.push('search_knowledge');
-      const hits = await retrieveRag(query, (intent as IntentId) || null, 3);
+      const hits = await retrieveRag(query, (intent as IntentId) || null, 3, {}, 'tool');
       if (!hits.length) return { content: [{ type: 'text', text: '知识库未检索到相关标准答案。' }] };
       return { content: [{ type: 'text', text: buildRagContext(hits) }] };
     },
@@ -173,6 +173,10 @@ export function createCsaAgentTools(ctx: CsaToolContext): CsaToolBundle {
         history: ctx.history?.map((m) => ({ role: m.role, content: m.content })) || [],
         currentPriority: prBase,
         unresolved: true,
+        channel: ctx.channel,
+        intent: intentId,
+        customerTier: tier,
+        hasOpenTicket: open.length > 0,
       });
       const pr: db.TicketPriority = higherPriority(prBase, esc.decision.priority);
       // 端侧遥测预留（v12）：device_snapshot 随工单落库，模组上线后直达售后

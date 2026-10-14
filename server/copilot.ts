@@ -15,6 +15,11 @@ import { retrieveRag } from './rag.js';
 import { DIRECT_ANSWER_THRESHOLD } from './knowledge.js';
 import { classifyIntent } from './intent.js';
 import type { IntentId } from './intent.js';
+import { v4 as uuidv4 } from 'uuid';
+import { persistTicket } from './store.js';
+import { computePriority, computeSlaDue, assignTicket } from './tickets.js';
+import { escalateFromContext, higherPriority, notifyEscalation } from './escalation.js';
+import { logger } from './logger.js';
 
 export interface CopilotKbHit {
   id: string;
@@ -59,7 +64,7 @@ export async function getCopilotSuggestions(opts: {
   const message = (opts.message || '').trim();
 
   // ① RAG 检索相关 FAQ
-  const hits = await retrieveRag(message, null, 3);
+  const hits = await retrieveRag(message, null, 3, {}, 'copilot');
 
   // ② 草稿：高置信直接引用标准答案；否则给参考片段；无匹配为 null
   let draftReply: string | null = null;
@@ -107,4 +112,93 @@ export async function getCopilotSuggestions(opts: {
   }
 
   return { message, draftReply, kbHits: hits, insights, actions };
+}
+
+/* ============================ 坐席一键执行（AI 副驾驶） ============================ */
+
+export interface CopilotExecuteResult {
+  ok: boolean;
+  ticketId?: string;
+  priority?: string;
+  message: string;
+}
+
+function latestUserMessage(sessionId: string): string {
+  const msgs = db.getMessagesBySession(sessionId);
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'user') return msgs[i].content;
+  }
+  return '';
+}
+
+/**
+ * 坐席 Copilot 一键执行（AI 副驾驶）：坐席确认后直接建单 / 升级转人工。
+ * 复用 Agent create_ticket 的同一套决策（情感升级 + 优先级 + SLA + 坐席分配 + 统一 persistTicket 落库），
+ * 会话维度防重（已有未结工单则直接返回，不重复建单）。
+ */
+export async function executeCopilotAction(opts: {
+  sessionId: string;
+  action: 'create_ticket' | 'escalate';
+  message?: string;
+}): Promise<CopilotExecuteResult> {
+  const session = db.getSession(opts.sessionId);
+  if (!session) return { ok: false, message: '会话不存在' };
+  const open = db
+    .getTicketsBySession(opts.sessionId)
+    .filter((t) => t.status === 'pending' || t.status === 'processing');
+  if (open.length) {
+    return {
+      ok: true,
+      ticketId: open[0].id,
+      priority: open[0].priority,
+      message: `该会话已有未结工单 ${open[0].id.slice(0, 8).toUpperCase()}，无需重复建单`,
+    };
+  }
+  const message = (opts.message || latestUserMessage(opts.sessionId) || '').slice(0, 500);
+  const intentResult = classifyIntent(message);
+  const tier = session.customer_id ? db.getCustomerProfile(session.customer_id)?.tier || 'new' : 'new';
+  const history = db.getMessagesBySession(opts.sessionId).map((m) => ({ role: m.role, content: m.content }));
+  const prBase = computePriority({ intent: intentResult.intent, customerTier: tier }).priority;
+  const esc = escalateFromContext({
+    message,
+    history,
+    currentPriority: prBase,
+    unresolved: true,
+    channel: session.channel,
+    intent: intentResult.intent,
+    customerTier: tier,
+    hasOpenTicket: false,
+  });
+  const pr = higherPriority(prBase, esc.decision.priority);
+  const assign = assignTicket(intentResult.intent, {});
+  const ticketId = uuidv4();
+  const reason = opts.action === 'escalate' ? '坐席一键升级' : '坐席 Copilot 一键建单';
+  await persistTicket({
+    id: ticketId,
+    session_id: session.id,
+    customer_name: session.customer_name ?? '访客用户',
+    intent: intentResult.intent,
+    reason,
+    trigger_rule: 'COPILOT_EXECUTE',
+    summary: message.slice(0, 200),
+    sentiment: esc.sentiment,
+    escalated: esc.decision.escalate ? 1 : 0,
+    escalation_reason: esc.decision.reason,
+    priority: pr,
+    status: 'pending',
+    assignee: assign.assignee,
+    sla_due_at: computeSlaDue(pr, new Date().toISOString()),
+    channel: session.channel,
+  });
+  if (esc.decision.notify) {
+    void notifyEscalation({ ticketId, priority: pr, reason: esc.decision.reason || reason, channel: session.channel, customer: session.customer_name });
+  }
+  db.updateSession(session.id, { status: 'waiting_human', handoff: 1, handoff_reason: reason });
+  logger.info(`[copilot] 坐席一键${opts.action === 'escalate' ? '升级' : '建单'} ${ticketId.slice(0, 8)} priority=${pr} assignee=${assign.assignee}`);
+  return {
+    ok: true,
+    ticketId,
+    priority: pr,
+    message: `已创建工单 ${ticketId.slice(0, 8).toUpperCase()}（优先级 ${pr}${assign.assignee ? `，受理 ${assign.assignee}` : ''}）`,
+  };
 }

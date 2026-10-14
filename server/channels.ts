@@ -162,6 +162,10 @@ async function openIngestTicket(opts: {
     history: histMsgs,
     currentPriority: opts.priority,
     unresolved: true,
+    channel: opts.session.channel,
+    intent: opts.intent,
+    customerTier: opts.session.customer_id ? db.getCustomerProfile(opts.session.customer_id)?.tier ?? null : null,
+    hasOpenTicket: db.hasOpenTicket(opts.session.id),
   });
   const finalPriority = higherPriority(opts.priority, esc.decision.priority);
   const sentimentForTicket = sum?.sentiment ?? esc.sentiment;
@@ -266,7 +270,7 @@ export async function ingestExternalMessage(input: IngestInput): Promise<IngestR
     const intentResult = classifyIntent(message, lastUserIntent ?? null);
 
     /* ---- ② 知识库检索 ---- */
-    const faqHits = await retrieveRag(message, intentResult.intent, 3);
+    const faqHits = await retrieveRag(message, intentResult.intent, 3, {}, input.channel);
     const topScore = faqHits[0]?.score ?? 0;
     const hitIds = faqHits.filter((h) => h.score >= HIT_THRESHOLD).map((h) => h.id);
 

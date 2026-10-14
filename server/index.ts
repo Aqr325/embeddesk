@@ -23,7 +23,9 @@ import { classifyIntent, isNegativeSentiment, INTENT_META, type IntentId, extrac
 import { seedKnowledgeBase, DIRECT_ANSWER_THRESHOLD, HIT_THRESHOLD, getKbCacheStats, type FaqHit, recommendFaqs } from './knowledge.js';
 import { retrieveRag, buildRagContext, getRagStats } from './rag.js';
 import { geminiConfigured } from './geminiAgent.js';
-import { getCopilotSuggestions } from './copilot.js';
+import { getCopilotSuggestions, executeCopilotAction } from './copilot.js';
+import { listGaps, gapStats, resolveGap, dismissGap, createFaqFromGap } from './knowledgeGap.js';
+import { listRules, getRule, createRule, updateRule, deleteRule, seedDefaultRules } from './workflow.js';
 import { evaluateHandoff, buildHandoffMessage, detectAgentSignal, stripHandoffToken, HANDOFF_TOKEN, type HandoffDecision } from './handoff.js';
 import { computePriority, computeSlaDue, assignTicket } from './tickets.js';
 import { enrichProfile } from './profile.js';
@@ -162,6 +164,7 @@ let cachedModels: Array<{ modelId: string; name: string; description?: string }>
 /* ============================ 初始化 ============================ */
 
 const seededFaqs = seedKnowledgeBase();
+seedDefaultRules();
 if (seededFaqs) logger.info(`[Init] 已载入 ${seededFaqs} 条 FAQ 知识（含产品资料库 catalog.json 的无人机反制设备 QA）`);
 const seededDemo = seedDemoData();
 if (seededDemo) logger.info(`[Init] 已生成 ${seededDemo} 条演示会话数据`);
@@ -197,7 +200,7 @@ async function runChatPipeline(
   const intentResult = classifyIntent(String(message), lastUserIntent ?? null);
 
   /* ---- ② 知识库检索 ---- */
-  const faqHits = await retrieveRag(String(message), intentResult.intent, 3);
+  const faqHits = await retrieveRag(String(message), intentResult.intent, 3, {}, session.channel);
   const topScore = faqHits[0]?.score ?? 0;
   const hitIds = faqHits.filter((h) => h.score >= HIT_THRESHOLD).map((h) => h.id);
 
@@ -383,6 +386,9 @@ async function runChatPipeline(
         history: histMsgs,
         currentPriority: opts.priority,
         unresolved: true,
+        channel: session.channel,
+        customerTier: session.customer_id ? db.getCustomerProfile(session.customer_id)?.tier ?? null : null,
+        hasOpenTicket: db.hasOpenTicket(session.id),
       });
       const finalPriority = higherPriority(opts.priority, esc.decision.priority);
       const sentimentForTicket = sum?.sentiment ?? esc.sentiment;
@@ -1281,13 +1287,100 @@ app.post('/api/copilot/suggest', requireAuth, asyncHandler(async (req, res) => {
   res.json(suggestion);
 }));
 
+/** 坐席 Copilot 一键执行（AI 副驾驶）：坐席确认后直接建单 / 升级转人工（需登录） */
+app.post('/api/copilot/execute', requireAuth, asyncHandler(async (req, res) => {
+  const sessionId = asString(req.body?.sessionId, { name: 'sessionId', max: 64 });
+  if (!sessionId) throw new HttpError(400, 'sessionId 不能为空');
+  const action = asString(req.body?.action, { name: 'action', max: 24 });
+  if (action !== 'create_ticket' && action !== 'escalate') throw new HttpError(400, '不支持的动作');
+  const message = asString(req.body?.message, { max: 500 });
+  const r = await executeCopilotAction({ sessionId, action, message });
+  res.json(r);
+}));
+
+/* ---------- 知识盲区自学习（企业知识助手） ---------- */
+
+/** 知识盲区清单 + 统计（需登录）：按 miss_count 降序的待补充知识问题 */
+app.get('/api/admin/knowledge-gaps', requireAuth, asyncHandler(async (req, res) => {
+  const status = (asString(req.query?.status, { max: 16 }) || 'pending') as db.KnowledgeGapStatus;
+  const limit = Math.min(200, Math.max(1, Number(req.query?.limit) || 100));
+  res.json({ gaps: listGaps(status, limit), stats: gapStats() });
+}));
+
+/** 一键从盲区补全 FAQ：以盲区问题为题、运营填答案，补全即消解盲区（自进化闭环终点） */
+app.post('/api/admin/knowledge-gaps/:id/create-faq', requireAuth, asyncHandler(async (req, res) => {
+  const answer = asString(req.body?.answer, { name: 'answer', max: 4000 });
+  if (!answer) throw new HttpError(400, '答案不能为空');
+  const category = asString(req.body?.category, { max: 32 });
+  const faq = createFaqFromGap(req.params.id, answer, category);
+  res.json({ faq });
+}));
+
+/** 标记盲区已解决（可关联到 FAQ） */
+app.post('/api/admin/knowledge-gaps/:id/resolve', requireAuth, asyncHandler(async (req, res) => {
+  const faqId = asString(req.body?.faqId, { max: 64 });
+  const ok = resolveGap(req.params.id, faqId || null);
+  if (!ok) throw new HttpError(404, '知识盲区不存在');
+  res.json({ success: true });
+}));
+
+/** 忽略盲区（误报 / 无需补知识） */
+app.delete('/api/admin/knowledge-gaps/:id', requireAuth, asyncHandler(async (req, res) => {
+  const ok = dismissGap(req.params.id);
+  if (!ok) throw new HttpError(404, '知识盲区不存在');
+  res.json({ success: true });
+}));
+
+/* ---------- 工作流自动化规则（条件 → 动作） ---------- */
+
+/** 规则列表（需登录） */
+app.get('/api/admin/workflow/rules', requireAuth, asyncHandler(async (_req, res) => {
+  res.json({ rules: listRules() });
+}));
+
+/** 新建规则 */
+app.post('/api/admin/workflow/rules', requireAuth, requireRole('admin', 'manager'), asyncHandler(async (req, res) => {
+  const name = asString(req.body?.name, { name: 'name', max: 64 });
+  if (!name) throw new HttpError(400, '规则名不能为空');
+  const rule = createRule({
+    name,
+    description: asString(req.body?.description, { max: 200 }),
+    enabled: req.body?.enabled !== false,
+    priority: Number(req.body?.priority) || 100,
+    conditions: (req.body?.conditions ?? {}) as Record<string, unknown>,
+    actions: (req.body?.actions ?? {}) as Record<string, unknown>,
+  });
+  res.json({ rule });
+}));
+
+/** 更新规则（含启停 / 调序 / 改条件与动作） */
+app.patch('/api/admin/workflow/rules/:id', requireAuth, requireRole('admin', 'manager'), asyncHandler(async (req, res) => {
+  const patch: Parameters<typeof updateRule>[1] = {};
+  if (req.body?.name != null) patch.name = asString(req.body.name, { max: 64 });
+  if (req.body?.description != null) patch.description = asString(req.body.description, { max: 200 });
+  if (req.body?.enabled != null) patch.enabled = Boolean(req.body.enabled);
+  if (req.body?.priority != null) patch.priority = Number(req.body.priority) || 100;
+  if (req.body?.conditions != null) patch.conditions = req.body.conditions;
+  if (req.body?.actions != null) patch.actions = req.body.actions;
+  const rule = updateRule(req.params.id, patch);
+  if (!rule) throw new HttpError(404, '规则不存在');
+  res.json({ rule });
+}));
+
+/** 删除规则 */
+app.delete('/api/admin/workflow/rules/:id', requireAuth, requireRole('admin', 'manager'), asyncHandler(async (req, res) => {
+  const ok = deleteRule(req.params.id);
+  if (!ok) throw new HttpError(404, '规则不存在');
+  res.json({ success: true });
+}));
+
 /** 知识库检索预览（管理后台调试用） */
 app.post('/api/faqs/search', asyncHandler(async (req, res) => {
   const q = asString(req.body?.query, { name: 'query' });
   if (!q) throw new HttpError(400, '查询内容不能为空');
   const intent = asString(req.body?.intent, { name: 'intent' });
   const result = classifyIntent(q);
-  const hits = await retrieveRag(q, (intent as IntentId) || result.intent, 5);
+  const hits = await retrieveRag(q, (intent as IntentId) || result.intent, 5, {}, 'search');
   res.json({ intent: result, hits, threshold: HIT_THRESHOLD, directThreshold: DIRECT_ANSWER_THRESHOLD });
 }));
 

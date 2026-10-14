@@ -8,7 +8,13 @@ import type {
   SatisfactionRecord,
   IntentId,
   CopilotSuggestion,
+  CopilotExecuteResult,
   InsightsData,
+  KnowledgeGap,
+  KnowledgeGapStats,
+  WorkflowRule,
+  WorkflowConditions,
+  WorkflowActions,
 } from '../types';
 
 const BASE = '/api';
@@ -281,6 +287,10 @@ export const api = {
   copilotSuggest: (body: { sessionId?: string; customerId?: string; message: string }) =>
     http<CopilotSuggestion>('/copilot/suggest', { method: 'POST', body: JSON.stringify(body) }),
 
+  /** 坐席 Copilot 一键执行：确认后直接建单 / 升级转人工（AI 副驾驶） */
+  copilotExecute: (body: { sessionId: string; action: 'create_ticket' | 'escalate'; message?: string }) =>
+    http<CopilotExecuteResult>('/copilot/execute', { method: 'POST', body: JSON.stringify(body) }),
+
   createFaq: (data: {
     category: string;
     question: string;
@@ -416,4 +426,39 @@ export const api = {
     http<{ config: LlmConfigPublic }>('/admin/llm-config', { method: 'POST', body: JSON.stringify(data) }),
 
   testLlmConfig: () => http<LlmConfigTestResult>('/admin/llm-config/test', { method: 'POST' }),
+
+  /* ---------- 知识盲区自学习（企业知识助手） ---------- */
+  getKnowledgeGaps: (status = 'pending') =>
+    http<{ gaps: KnowledgeGap[]; stats: KnowledgeGapStats }>(`/admin/knowledge-gaps?status=${status}`),
+
+  /** 一键从盲区补全 FAQ（补全即消解盲区，自进化闭环终点） */
+  createFaqFromGap: (id: string, data: { answer: string; category?: string }) =>
+    http<{ faq: Faq }>(`/admin/knowledge-gaps/${id}/create-faq`, { method: 'POST', body: JSON.stringify(data) }),
+
+  /** 标记盲区已解决（可关联 FAQ） */
+  resolveKnowledgeGap: (id: string, faqId?: string) =>
+    http<{ success: boolean }>(`/admin/knowledge-gaps/${id}/resolve`, { method: 'POST', body: JSON.stringify({ faqId }) }),
+
+  /** 忽略盲区（误报 / 无需补知识） */
+  dismissKnowledgeGap: (id: string) =>
+    http<{ success: boolean }>(`/admin/knowledge-gaps/${id}`, { method: 'DELETE' }),
+
+  /* ---------- 工作流自动化规则 ---------- */
+  getWorkflowRules: () => http<{ rules: WorkflowRule[] }>('/admin/workflow/rules'),
+
+  createWorkflowRule: (data: {
+    name: string;
+    description?: string;
+    enabled?: boolean;
+    priority?: number;
+    conditions: WorkflowConditions;
+    actions: WorkflowActions;
+  }) => http<{ rule: WorkflowRule }>('/admin/workflow/rules', { method: 'POST', body: JSON.stringify(data) }),
+
+  updateWorkflowRule: (
+    id: string,
+    patch: Partial<{ name: string; description: string; enabled: boolean; priority: number; conditions: WorkflowConditions; actions: WorkflowActions }>,
+  ) => http<{ rule: WorkflowRule }>(`/admin/workflow/rules/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteWorkflowRule: (id: string) => http<{ success: boolean }>(`/admin/workflow/rules/${id}`, { method: 'DELETE' }),
 };

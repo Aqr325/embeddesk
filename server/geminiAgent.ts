@@ -209,7 +209,7 @@ async function executeTool(
 /** Gemini 不可用/失败时的降级：与 SDK 不可用时的既有降级等价（知识库直答） */
 async function knowledgeFallback(opts: CallAgentOptions, reason: string): Promise<CallAgentResult> {
   logger.warn(`[geminiAgent] ${reason}，降级知识库直答`);
-  const hits = await retrieveRag(opts.prompt, null, 3);
+  const hits = await retrieveRag(opts.prompt, null, 3, {}, 'agent');
   const top = hits[0];
   if (top && top.score >= HIT_THRESHOLD) {
     const related = hits.slice(1).filter((h) => h.score >= 0.18);
