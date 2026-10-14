@@ -11,9 +11,16 @@
  * 关键词精确匹配的可控性优于稠密向量，且无需模型推理开销与外部依赖。
  */
 import { v4 as uuidv4 } from 'uuid';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as db from './db.js';
 import { normalize, tokenizeSet, keywordHitNorm, diceSet } from './nlp.js';
 import type { IntentId } from './intent.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+/** 产品资料库（无人机反制设备真实参数版），本地无 GCP 时亦灌入可检索 faqs 表 */
+const CATALOG_PATH = resolve(__dirname, '../data/products/catalog.json');
 
 export interface FaqHit {
   id: string;
@@ -333,22 +340,65 @@ const SEED_FAQS: SeedFaq[] = [
   },
 ];
 
-/** 首次启动时写入种子知识库 */
-export function seedKnowledgeBase(): number {
-  if (db.faqCount() > 0) return 0;
+/**
+ * 将产品资料库 catalog.json 的 QA 幂等灌入本地 faqs 表。
+ * 设计要点：
+ *   - 与 SEED_FAQS 解耦：catalog 是无人机反制设备的真实资料（16 款产品 + 34 QA），
+ *     本地无 GCP 时即作为可检索知识底座，避免"无人机客服答不出无人机问题"；
+ *   - 用 catalog 的真实 id（qa-xxx）做 upsert，重启/重复调用幂等，不重复插入；
+ *   - 每次启动都执行（不受 faqCount>0 早返回影响），保证存量库也能补齐；
+ *   - 文件缺失或解析失败时静默跳过（catalog 为可选增强，不影响蜂窝模组基底）。
+ */
+export function ingestCatalogFaqs(): number {
+  if (!existsSync(CATALOG_PATH)) return 0;
+  let catalog: any;
+  try {
+    catalog = JSON.parse(readFileSync(CATALOG_PATH, 'utf8'));
+  } catch {
+    return 0;
+  }
+  const qa: any[] = Array.isArray(catalog?.qa) ? catalog.qa : [];
+  if (!qa.length) return 0;
   const now = new Date().toISOString();
-  SEED_FAQS.forEach((f) => {
+  let n = 0;
+  for (const item of qa) {
+    if (!item?.id || !item?.question || !item?.answer) continue;
     db.upsertFaq({
-      id: uuidv4(),
-      category: f.category,
-      question: f.question,
-      answer: f.answer,
-      keywords: f.keywords,
+      id: String(item.id),
+      category: item.category || '产品资料',
+      question: item.question,
+      answer: item.answer,
+      keywords: Array.isArray(item.keywords) ? item.keywords.join(',') : (item.keywords || ''),
       enabled: 1,
       hit_count: 0,
       created_at: now,
       updated_at: now,
     });
-  });
-  return SEED_FAQS.length;
+    n++;
+  }
+  return n;
+}
+
+/** 首次启动时写入种子知识库 */
+export function seedKnowledgeBase(): number {
+  let seeded = 0;
+  if (db.faqCount() === 0) {
+    const now = new Date().toISOString();
+    SEED_FAQS.forEach((f) => {
+      db.upsertFaq({
+        id: uuidv4(),
+        category: f.category,
+        question: f.question,
+        answer: f.answer,
+        keywords: f.keywords,
+        enabled: 1,
+        hit_count: 0,
+        created_at: now,
+        updated_at: now,
+      });
+    });
+    seeded = SEED_FAQS.length;
+  }
+  const catalogCount = ingestCatalogFaqs();
+  return seeded + catalogCount;
 }

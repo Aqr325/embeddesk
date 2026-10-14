@@ -162,7 +162,7 @@ let cachedModels: Array<{ modelId: string; name: string; description?: string }>
 /* ============================ 初始化 ============================ */
 
 const seededFaqs = seedKnowledgeBase();
-if (seededFaqs) logger.info(`[Init] 已写入 ${seededFaqs} 条 FAQ 种子知识`);
+if (seededFaqs) logger.info(`[Init] 已载入 ${seededFaqs} 条 FAQ 知识（含产品资料库 catalog.json 的无人机反制设备 QA）`);
 const seededDemo = seedDemoData();
 if (seededDemo) logger.info(`[Init] 已生成 ${seededDemo} 条演示会话数据`);
 
