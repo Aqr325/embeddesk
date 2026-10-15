@@ -36,9 +36,9 @@ export const PROVIDER_META: Record<ProviderId, {
   openai: {
     label: 'OpenAI 兼容（/v1/chat/completions）',
     discoverable: true,
-    defaultEndpoint: 'https://api.openai.com/v1',
-    endpointPlaceholder: 'https://api.openai.com/v1 或自建 vLLM/Ollama 端点',
-    hint: '兼容 OpenAI 协议的网关（OpenAI、DeepSeek、Moonshot、通义千问、vLLM、Ollama 等）。填端点 + 密钥后点「探测可用模型」自动拉取。',
+    defaultEndpoint: 'https://api.openai.com/v1/chat/completions',
+    endpointPlaceholder: 'https://api.example.com/v1/chat/completions',
+    hint: '兼容 OpenAI 协议的网关（OpenAI、DeepSeek、Moonshot、通义千问、vLLM、Ollama 等）。填完整接口地址 + 密钥后点「探测可用模型」自动拉取。',
   },
   anthropic: {
     label: 'Anthropic（/v1/messages）',
@@ -58,6 +58,80 @@ export const PROVIDER_META: Record<ProviderId, {
 
 export const PROVIDER_IDS = Object.keys(PROVIDER_META) as ProviderId[];
 
+/**
+ * 供应商预设（WorkBuddy 式接入方案：仅支持 OpenAI 兼容协议 API）。
+ * 前端「供应商」下拉据此渲染；选中预设自动填充完整接口地址与默认模型。
+ * 完整接口地址形态：https://api.example.com/v1/chat/completions。
+ */
+export interface ProviderPreset {
+  id: string;
+  label: string;
+  /** 完整接口地址（chat/completions 全路径） */
+  endpoint: string;
+  /** 预设默认模型（用户可改） */
+  defaultModel: string;
+  hint: string;
+}
+
+export const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: 'custom',
+    label: '自定义',
+    endpoint: '',
+    defaultModel: '',
+    hint: '填写任意 OpenAI 兼容端点（含自建 vLLM / Ollama / one-api 等网关）。',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    defaultModel: 'gpt-4o',
+    hint: 'OpenAI 官方 API（gpt-4o / gpt-4o-mini 等）。',
+  },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    endpoint: 'https://api.deepseek.com/v1/chat/completions',
+    defaultModel: 'deepseek-chat',
+    hint: 'DeepSeek 对话模型（deepseek-chat / deepseek-reasoner）。',
+  },
+  {
+    id: 'zhipu',
+    label: '智谱 AI',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    defaultModel: 'glm-4-plus',
+    hint: '智谱 GLM 系列；思考模式对 GLM-4.5 及以上版本生效。',
+  },
+  {
+    id: 'dashscope',
+    label: '通义千问',
+    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    defaultModel: 'qwen-plus',
+    hint: '阿里百炼 OpenAI 兼容模式（qwen-plus / qwen-max 等）。',
+  },
+  {
+    id: 'moonshot',
+    label: 'Moonshot Kimi',
+    endpoint: 'https://api.moonshot.cn/v1/chat/completions',
+    defaultModel: 'kimi-k2-0905-preview',
+    hint: '月之暗面 Kimi 系列。',
+  },
+  {
+    id: 'siliconflow',
+    label: '硅基流动',
+    endpoint: 'https://api.siliconflow.cn/v1/chat/completions',
+    defaultModel: 'deepseek-ai/DeepSeek-V3',
+    hint: 'SiliconCloud 聚合多款开源模型。',
+  },
+  {
+    id: 'volcengine',
+    label: '火山方舟',
+    endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+    defaultModel: 'doubao-pro-32k',
+    hint: '字节跳动豆包大模型（需开通方舟推理接入点）。',
+  },
+];
+
 /** 默认 persona 基础提示词（管理员清空配置时回退到此） */
 export const DEFAULT_BASE_PROMPT = `你是「{BRAND}」的智能客服助手「小云」，负责在线解答客户咨询。
 
@@ -76,6 +150,12 @@ export const LLM_CONFIG_DEFAULTS = {
   temperature: 0.7,
   maxReplyLength: 600,
   systemPrompt: '',
+  toolCalling: true,
+  imageInput: false,
+  thinkingMode: false,
+  customProtocol: false,
+  maxInputTokens: null as number | null,
+  maxOutputTokens: null as number | null,
 };
 
 /** 温度合法区间 */
@@ -83,6 +163,9 @@ export const TEMP_MIN = 0;
 export const TEMP_MAX = 1;
 export const MAX_REPLY_MIN = 100;
 export const MAX_REPLY_MAX = 2000;
+/** token 限额合法区间（输入=上下文预算，输出=单次回复上限；0/空 = 使用提供商默认值） */
+export const TOKEN_MIN = 256;
+export const TOKEN_MAX = 2_000_000;
 
 export interface ResolvedLlmConfig {
   provider: string;
@@ -93,6 +176,14 @@ export interface ResolvedLlmConfig {
   maxReplyLength: number;
   /** 实际生效的 persona 基础提示词（空配置回退默认） */
   basePrompt: string;
+  /** 高级配置：能力开关 */
+  toolCalling: boolean;
+  imageInput: boolean;
+  thinkingMode: boolean;
+  customProtocol: boolean;
+  /** 高级配置：token 限额（null = 使用提供商默认值） */
+  maxInputTokens: number | null;
+  maxOutputTokens: number | null;
   updatedAt: string;
 }
 
@@ -107,6 +198,12 @@ export function getResolvedConfig(): ResolvedLlmConfig {
     temperature: clampTemp(c.temperature),
     maxReplyLength: clampMaxReply(c.maxReplyLength),
     basePrompt: c.systemPrompt && c.systemPrompt.trim() ? c.systemPrompt : DEFAULT_BASE_PROMPT,
+    toolCalling: c.toolCalling !== 0,
+    imageInput: c.imageInput === 1,
+    thinkingMode: c.thinkingMode === 1,
+    customProtocol: c.customProtocol === 1,
+    maxInputTokens: clampTokens(c.maxInputTokens),
+    maxOutputTokens: clampTokens(c.maxOutputTokens),
     updatedAt: c.updatedAt,
   };
 }
@@ -119,6 +216,14 @@ export function clampTemp(t: number): number {
 export function clampMaxReply(n: number): number {
   if (!Number.isFinite(n)) return LLM_CONFIG_DEFAULTS.maxReplyLength;
   return Math.min(MAX_REPLY_MAX, Math.max(MAX_REPLY_MIN, Math.round(n)));
+}
+
+/** token 限额归一化：非正数/非法值 → null（使用提供商默认值） */
+export function clampTokens(n: number | null | undefined): number | null {
+  if (n === null || n === undefined) return null;
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  return Math.min(TOKEN_MAX, Math.max(TOKEN_MIN, Math.round(v)));
 }
 
 /**
@@ -150,6 +255,12 @@ export function toPublicConfig(c: ResolvedLlmConfig) {
     temperature: c.temperature,
     maxReplyLength: c.maxReplyLength,
     systemPrompt: c.basePrompt === DEFAULT_BASE_PROMPT ? '' : c.basePrompt,
+    toolCalling: c.toolCalling,
+    imageInput: c.imageInput,
+    thinkingMode: c.thinkingMode,
+    customProtocol: c.customProtocol,
+    maxInputTokens: c.maxInputTokens,
+    maxOutputTokens: c.maxOutputTokens,
     updatedAt: c.updatedAt,
   };
 }

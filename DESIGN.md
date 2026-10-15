@@ -120,6 +120,8 @@ components:
 - **button-primary**：主操作按钮，primary 底 / surface 字，md 圆角，12px 内边距；hover 转 tertiary。active 提供 `scale(0.97)` 触感反馈。
 - **input-default**：输入框，neutral 底 / on-surface 字，md 圆角；focus-visible 显示 2px primary 环（offset 2px）。
 - **card**：surface 底、xl 圆角、16px 内边距承载内容块。
+- **dialog-model-config（模型配置接入面板）**：管理后台「模型配置」采用的 WorkBuddy 式接入方案。单卡片承载完整「添加模型」流程：供应商下拉（仅 OpenAI 兼容协议预设，`✦ 自定义` + 7 厂商，选中自动填充接口地址与默认模型）→ 接口地址（完整 URL 占位符 `https://api.example.com/v1/chat/completions`）→ API Key（密码框 + 眼睛切换 + 同行「测试连接」按钮，表单值即时验证免保存）→ 模型名称（手填 + 「探测可用模型」自动拉取）→ 高级配置（工具调用 / 图片输入 / 思考模式 / 自定义协议四开关 + 输入 / 输出 Tokens，占位符「使用提供商默认值」）→ 页脚取消 / 保存。防冲掉铁律：端点或模型非空时，切换供应商 / 协议不覆盖用户已填值。
+- **checkbox-capability**：高级配置能力开关，4px 圆角、accent 填充，label 可点选；默认仅「工具调用」开启。
 
 ## Do's and Don'ts
 

@@ -34,15 +34,19 @@ import {
   toPublicConfig,
   clampTemp,
   clampMaxReply,
+  clampTokens,
   TEMP_MIN,
   TEMP_MAX,
   MAX_REPLY_MIN,
   MAX_REPLY_MAX,
+  TOKEN_MIN,
+  TOKEN_MAX,
   PROVIDER_IDS,
   PROVIDER_META,
+  PROVIDER_PRESETS,
   type ProviderId,
 } from './llmConfig.js';
-import { discoverModels } from './llmProviders.js';
+import { discoverModels, testProviderConnection } from './llmProviders.js';
 import { ingestExternalMessage, type ChannelType } from './channels.js';
 import { summarizeConversation } from './summarize.js';
 import { escalateFromContext, higherPriority } from './escalation.js';
@@ -810,6 +814,14 @@ app.get('/api/models', async (_req, res) => {
       endpointPlaceholder: PROVIDER_META[id].endpointPlaceholder,
       hint: PROVIDER_META[id].hint,
     })),
+    // WorkBuddy 式供应商预设（仅 OpenAI 兼容协议 API）：选中自动填充接口地址与默认模型
+    presets: PROVIDER_PRESETS.map((p) => ({
+      id: p.id,
+      label: p.label,
+      endpoint: p.endpoint,
+      defaultModel: p.defaultModel,
+      hint: p.hint,
+    })),
     defaultProvider: cfg.provider,
   });
 });
@@ -861,33 +873,91 @@ app.post('/api/admin/llm-config', requireAuth, requireRole('admin', 'manager'), 
   if (body.systemPrompt !== undefined) {
     patch.systemPrompt = asString(body.systemPrompt, { max: 8000, name: 'systemPrompt' });
   }
+  // 高级配置：能力开关（布尔语义，落库 0/1）
+  for (const key of ['toolCalling', 'imageInput', 'thinkingMode', 'customProtocol'] as const) {
+    if (body[key] !== undefined) {
+      const v = body[key];
+      const truthy = v === true || v === 1 || v === '1' || v === 'true';
+      const falsy = v === false || v === 0 || v === '0' || v === 'false';
+      if (!truthy && !falsy) {
+        return res.status(400).json({ error: `${key} 必须为布尔值` });
+      }
+      (patch as Record<string, unknown>)[key] = truthy ? 1 : 0;
+    }
+  }
+  // 高级配置：token 限额（空值/null = 使用提供商默认值）
+  for (const key of ['maxInputTokens', 'maxOutputTokens'] as const) {
+    if (body[key] !== undefined) {
+      if (body[key] === null || body[key] === '') {
+        (patch as Record<string, unknown>)[key] = null;
+      } else {
+        const n = Number(body[key]);
+        if (!Number.isFinite(n)) return res.status(400).json({ error: `${key} 必须为数字` });
+        if (n < TOKEN_MIN || n > TOKEN_MAX) {
+          return res.status(400).json({ error: `${key} 须在 ${TOKEN_MIN}–${TOKEN_MAX} 之间（留空表示使用提供商默认值）` });
+        }
+        (patch as Record<string, unknown>)[key] = clampTokens(n);
+      }
+    }
+  }
 
-  const saved = db.saveLlmConfig(patch as any);
+  db.saveLlmConfig(patch as any);
   logger.info(`[LLM 配置] 已更新：${Object.keys(patch).join(', ')}`);
-  res.json({ config: toPublicConfig({ ...getResolvedConfig(), ...saved } as any) });
+  // 落库后重新解析返回：布尔开关经 getResolvedConfig 转 true/false（DB 层是 0/1），
+  // token 限额归一化（非法值→null），避免把存储形态直接透给前端。
+  res.json({ config: toPublicConfig(getResolvedConfig()) });
 }));
 
-/** 测试连接：用当前配置做一次轻量真实调用，返回成败与模型信息 */
-app.post('/api/admin/llm-config/test', requireAuth, requireRole('admin', 'manager'), asyncHandler(async (_req, res) => {
+/** 测试连接：用当前配置（或「表单当前值」）做一次轻量真实调用，返回成败与模型信息 */
+app.post('/api/admin/llm-config/test', requireAuth, requireRole('admin', 'manager'), asyncHandler(async (req, res) => {
+  const body = req.body ?? {};
   const cfg = getResolvedConfig();
-  const probeSession = { id: 'llm-config-test', sdk_session_id: null as string | null };
-  const t0 = Date.now();
-  try {
-    const r = await callAgent({
-      prompt: '你好，请只回复「连接正常」四个字。',
-      systemPrompt: '你是客服助手。只回复「连接正常」四个字，不要多写。',
-      model: cfg.model,
-      session: probeSession,
-      timeoutMs: 15000,
-    });
-    if (r.text && r.text.trim()) {
-      res.json({ ok: true, usedModel: r.usedModel, latencyMs: Date.now() - t0, reply: r.text.trim().slice(0, 60) });
-    } else {
-      res.json({ ok: false, error: '模型返回为空', latencyMs: Date.now() - t0 });
-    }
-  } catch (e: any) {
-    res.json({ ok: false, error: String(e?.message || e).slice(0, 200), latencyMs: Date.now() - t0 });
+  // 表单值场景：请求体显式传了协议；未传则用已保存配置（旧行为）
+  const formProvider =
+    body.provider !== undefined && body.provider !== ''
+      ? asString(body.provider, { max: 24, name: 'provider' })
+      : null;
+  if (formProvider && !PROVIDER_IDS.includes(formProvider as ProviderId)) {
+    return res.status(400).json({ ok: false, error: `不支持的接入协议：${formProvider}` });
   }
+  // auto 无「表单值」可测（平台默认 SDK 接入不存在端点/密钥表单），明确提示
+  if (formProvider === 'auto') {
+    return res.json({ ok: false, error: 'auto（平台默认）模式请保存配置后再测试', latencyMs: 0 });
+  }
+  const provider = formProvider ?? cfg.provider;
+  if (!PROVIDER_IDS.includes(provider as ProviderId)) {
+    return res.status(400).json({ ok: false, error: `不支持的接入协议：${provider}` });
+  }
+  const t0 = Date.now();
+
+  // auto（平台默认 SDK 路径）：沿用既有 callAgent 轻量探针
+  if (provider === 'auto') {
+    const probeSession = { id: 'llm-config-test', sdk_session_id: null as string | null };
+    try {
+      const r = await callAgent({
+        prompt: '你好，请只回复「连接正常」四个字。',
+        systemPrompt: '你是客服助手。只回复「连接正常」四个字，不要多写。',
+        model: cfg.model,
+        session: probeSession,
+        timeoutMs: 15000,
+      });
+      if (r.text && r.text.trim()) {
+        res.json({ ok: true, usedModel: r.usedModel, latencyMs: Date.now() - t0, reply: r.text.trim().slice(0, 60) });
+      } else {
+        res.json({ ok: false, error: '模型返回为空', latencyMs: Date.now() - t0 });
+      }
+    } catch (e: any) {
+      res.json({ ok: false, error: String(e?.message || e).slice(0, 200), latencyMs: Date.now() - t0 });
+    }
+    return;
+  }
+
+  // 显式协议（openai / anthropic / gemini）：用「表单当前值」（未保存）直连测试，实现保存前验证
+  const endpoint = body.endpoint !== undefined ? asString(body.endpoint, { max: 512, name: 'endpoint' }) : cfg.endpoint;
+  const apiKey = body.apiKey !== undefined ? asString(body.apiKey, { max: 512, name: 'apiKey' }) : cfg.apiKey;
+  const model = body.model ? asString(body.model, { max: 64, name: 'model' }) : cfg.model;
+  const r = await testProviderConnection({ provider, endpoint, apiKey, model });
+  res.json({ ok: r.ok, usedModel: r.usedModel, latencyMs: r.latencyMs, reply: r.reply, error: r.error });
 }));
 
 /** 探测可用模型：根据协议 + 端点 + 密钥，自动拉取该端点可用模型列表（供前端下拉自动填充） */

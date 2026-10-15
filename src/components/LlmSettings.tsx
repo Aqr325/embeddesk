@@ -1,16 +1,62 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bot, Save, FlaskConical, RotateCcw, Loader2, AlertCircle, CheckCircle2, KeyRound, Thermometer, Type, Cpu, Network, Search } from 'lucide-react';
-import { api, type LlmConfigPublic, type LlmConfigTestResult, type ProviderMeta } from '../hooks/useApi';
+import {
+  Bot,
+  Save,
+  FlaskConical,
+  RotateCcw,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  KeyRound,
+  Thermometer,
+  Type,
+  Cpu,
+  Sparkles,
+  Eye,
+  EyeOff,
+  Search,
+  Settings2,
+  PlugZap,
+} from 'lucide-react';
+import { api, type LlmConfigPublic, type LlmConfigTestResult, type ProviderMeta, type ProviderPreset } from '../hooks/useApi';
 
 const TEMP_MIN = 0;
 const TEMP_MAX = 1;
 const MAX_REPLY_MIN = 100;
 const MAX_REPLY_MAX = 2000;
+const TOKEN_MIN = 256;
+const TOKEN_MAX = 2000000;
+
+/** 能力开关复选（高级配置） */
+function CapCheckbox({
+  label,
+  checked,
+  onChange,
+  title,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title?: string;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm cursor-pointer select-none" title={title}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="w-4 h-4 rounded accent-accent"
+      />
+      {label}
+    </label>
+  );
+}
 
 export function LlmSettings() {
   const [config, setConfig] = useState<LlmConfigPublic | null>(null);
   const [models, setModels] = useState<Array<{ modelId: string; name: string }>>([]);
   const [providers, setProviders] = useState<ProviderMeta[]>([]);
+  const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -21,14 +67,24 @@ export function LlmSettings() {
   const [testResult, setTestResult] = useState<LlmConfigTestResult | null>(null);
 
   // 表单（与后端字段对齐）
-  const [provider, setProvider] = useState('auto');
+  const [preset, setPreset] = useState('custom'); // 供应商预设 id
+  const [provider, setProvider] = useState('auto'); // 接入协议（自定义协议展开时可选）
   const [model, setModel] = useState('auto');
   const [apiKey, setApiKey] = useState(''); // 仅在用户主动填写时发送；不回显明文
+  const [showKey, setShowKey] = useState(false);
   const [endpoint, setEndpoint] = useState('');
   const [temperature, setTemperature] = useState(0.7);
   const [maxReplyLength, setMaxReplyLength] = useState(600);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [discoveredModels, setDiscoveredModels] = useState<Array<{ modelId: string; name: string }>>([]);
+
+  // 高级配置
+  const [toolCalling, setToolCalling] = useState(true);
+  const [imageInput, setImageInput] = useState(false);
+  const [thinkingMode, setThinkingMode] = useState(false);
+  const [customProtocol, setCustomProtocol] = useState(false);
+  const [maxInputTokens, setMaxInputTokens] = useState(''); // 空 = 使用提供商默认值
+  const [maxOutputTokens, setMaxOutputTokens] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,15 +92,30 @@ export function LlmSettings() {
     try {
       const [cfgRes, modelsRes] = await Promise.all([api.getLlmConfig(), api.getModels()]);
       const c = cfgRes.config;
+      const presetList = modelsRes.presets || [];
       setConfig(c);
       setModels(modelsRes.models);
       setProviders(modelsRes.providers || []);
+      setPresets(presetList);
       setProvider(c.provider || 'auto');
       setModel(c.model || 'auto');
       setEndpoint(c.endpoint || '');
       setTemperature(c.temperature ?? 0.7);
       setMaxReplyLength(c.maxReplyLength ?? 600);
       setSystemPrompt(c.systemPrompt || ''); // 空 = 使用系统默认提示词
+      setToolCalling(c.toolCalling ?? true);
+      setImageInput(c.imageInput ?? false);
+      setThinkingMode(c.thinkingMode ?? false);
+      setCustomProtocol(c.customProtocol ?? false);
+      setMaxInputTokens(c.maxInputTokens ? String(c.maxInputTokens) : '');
+      setMaxOutputTokens(c.maxOutputTokens ? String(c.maxOutputTokens) : '');
+      // 按已存端点反查供应商预设（精确匹配才回显，否则「自定义」）
+      const matched = presetList.find((p) => p.endpoint && p.endpoint === c.endpoint);
+      setPreset(matched?.id ?? 'custom');
+      setDiscoveredModels([]);
+      setDiscoverNote(null);
+      setTestResult(null);
+      setApiKey('');
     } catch (e: any) {
       setError(e?.message || '加载配置失败');
     } finally {
@@ -56,28 +127,64 @@ export function LlmSettings() {
     load();
   }, [load]);
 
-  const handleProviderChange = (next: string) => {
-    setProvider(next);
+  /* ---------- 供应商预设（仅 OpenAI 兼容协议 API） ---------- */
+  const handlePresetChange = (id: string) => {
+    setPreset(id);
+    const p = presets.find((x) => x.id === id);
+    const prev = presets.find((x) => x.id === preset);
     setDiscoverNote(null);
     setDiscoveredModels([]);
+    setSavedTip(null);
+    if (p?.endpoint) {
+      setEndpoint(p.endpoint);
+      // 模型名：为空或正等于上一个预设的默认模型时才覆盖，避免冲掉用户手填
+      if (!model.trim() || (prev && model === prev.defaultModel)) setModel(p.defaultModel);
+    }
+  };
+
+  /* ---------- 高级配置：自定义协议 ---------- */
+  const handleCustomProtocolToggle = (on: boolean) => {
+    setCustomProtocol(on);
+    setDiscoverNote(null);
+    setDiscoveredModels([]);
+    setSavedTip(null);
+    if (on) {
+      const meta = providers.find((p) => p.id === provider);
+      if (!endpoint.trim() && meta?.defaultEndpoint) setEndpoint(meta.defaultEndpoint);
+    }
+  };
+
+  const handleProviderChange = (next: string) => {
+    setProvider(next);
     const meta = providers.find((p) => p.id === next);
-    // 切换协议时：端点（仅当为空时）填默认；模型重置（auto 默认 auto，其余留空待探测/手动）
     if (!endpoint.trim() && meta?.defaultEndpoint) setEndpoint(meta.defaultEndpoint);
-    setModel(next === 'auto' ? 'auto' : '');
+    setDiscoverNote(null);
+    setDiscoveredModels([]);
     setSavedTip(null);
   };
 
+  /* ---------- 生效协议（未勾选「自定义协议」时固定 OpenAI 兼容） ---------- */
+  const onPlatformDefault = (config?.provider || 'auto') === 'auto';
+  const nothingConfigured = !endpoint.trim() && !model.trim() && apiKey.length === 0 && !config?.hasApiKey;
+  const effectiveProvider = customProtocol ? provider : 'openai';
+  const providerToSave =
+    nothingConfigured && !customProtocol ? config?.provider || 'auto' : effectiveProvider;
+  const meta = providers.find((p) => p.id === providerToSave);
+  const activePreset = presets.find((p) => p.id === preset);
+
+  /* ---------- 探测可用模型（填接口地址后自动拉取） ---------- */
   const handleDiscover = async () => {
-    const meta = providers.find((p) => p.id === provider);
-    if (!meta?.discoverable) return;
+    if (!endpoint.trim()) {
+      setError('请先填写接口地址');
+      return;
+    }
     setDiscovering(true);
     setDiscoverNote(null);
     setError(null);
     try {
-      const res = await api.discoverModels({ provider, endpoint, apiKey: apiKey || undefined });
+      const res = await api.discoverModels({ provider: providerToSave, endpoint, apiKey: apiKey || undefined });
       if (res.ok && res.models?.length) {
         setDiscoveredModels(res.models);
-        // 若当前 model 不在列表中则默认选第一个
         if (!res.models.some((m) => m.modelId === model)) setModel(res.models[0].modelId);
         setDiscoverNote(`已发现 ${res.models.length} 个可用模型，已自动填充下拉`);
       } else if (res.ok) {
@@ -92,18 +199,56 @@ export function LlmSettings() {
     }
   };
 
+  /* ---------- 测试连接（用表单当前值，无需先保存） ---------- */
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    setError(null);
+    try {
+      setTestResult(
+        await api.testLlmConfig({
+          provider: providerToSave,
+          endpoint,
+          apiKey: apiKey || undefined,
+          model,
+        }),
+      );
+    } catch (e: any) {
+      setError(e?.message || '测试连接失败');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleSave = async () => {
+    // 前端守卫：显式协议必须填齐模型与接口地址
+    if (providerToSave !== 'auto') {
+      if (!model.trim()) {
+        setError('请填写模型名称（如 gpt-4o）');
+        return;
+      }
+      if (!endpoint.trim()) {
+        setError('请填写接口地址');
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     setSavedTip(null);
     try {
       const payload: Record<string, unknown> = {
-        provider,
-        model,
+        provider: providerToSave,
+        model: model.trim() || (providerToSave === 'auto' ? 'auto' : ''),
         endpoint,
         temperature,
         maxReplyLength,
         systemPrompt,
+        toolCalling,
+        imageInput,
+        thinkingMode,
+        customProtocol,
+        maxInputTokens: maxInputTokens.trim() ? Number(maxInputTokens) : null,
+        maxOutputTokens: maxOutputTokens.trim() ? Number(maxOutputTokens) : null,
       };
       // apiKey 仅在用户填写时才发送（空字符串表示清除）
       if (apiKey.length > 0) payload.apiKey = apiKey;
@@ -111,6 +256,7 @@ export function LlmSettings() {
       setConfig(res.config);
       setSavedTip('配置已保存并立即生效');
       setApiKey(''); // 清空输入框，避免重复提交明文
+      setTestResult(null);
     } catch (e: any) {
       setError(e?.message || '保存失败');
     } finally {
@@ -118,16 +264,20 @@ export function LlmSettings() {
     }
   };
 
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
+  /* ---------- 恢复平台默认接入 ---------- */
+  const handleResetPlatform = async () => {
+    setSaving(true);
     setError(null);
+    setSavedTip(null);
     try {
-      setTestResult(await api.testLlmConfig());
+      const res = await api.saveLlmConfig({ provider: 'auto', model: 'auto', endpoint: '' });
+      setConfig(res.config);
+      setSavedTip('已恢复平台默认接入（CodeBuddy Agent SDK）');
+      await load();
     } catch (e: any) {
-      setError(e?.message || '测试连接失败');
+      setError(e?.message || '恢复失败');
     } finally {
-      setTesting(false);
+      setSaving(false);
     }
   };
 
@@ -136,19 +286,6 @@ export function LlmSettings() {
     setSavedTip(null);
   };
 
-  // 模型下拉选项：auto 用平台默认列表；其余协议优先用探测结果
-  const isAuto = provider === 'auto';
-  const meta = providers.find((p) => p.id === provider);
-  const modelOptions: Array<{ modelId: string; name: string }> = isAuto
-    ? models
-    : discoveredModels.length
-      ? [...discoveredModels, ...(model && !discoveredModels.some((m) => m.modelId === model) ? [{ modelId: model, name: model }] : [])]
-      : model && !models.some((m) => m.modelId === model)
-        ? [{ modelId: model, name: model }]
-        : [];
-  const showModelSelect = isAuto || modelOptions.length > 0;
-  const endpointPlaceholder = meta?.endpointPlaceholder || 'https://your-llm-endpoint （留空使用默认）';
-
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground p-4">
@@ -156,6 +293,8 @@ export function LlmSettings() {
       </div>
     );
   }
+
+  const canDiscover = providerToSave !== 'auto' && endpoint.trim().length > 0 && Boolean(meta?.discoverable);
 
   return (
     <div className="space-y-5">
@@ -172,117 +311,267 @@ export function LlmSettings() {
         </div>
       )}
 
-      {/* 接入协议 + 模型 / 端点 */}
-      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <Network size={16} className="text-accent" />
-          <h3 className="text-sm font-medium">接入协议与模型</h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* ============ 模型配置（WorkBuddy 式接入面板） ============ */}
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-6 space-y-5 shadow-sm">
+        <div className="flex items-start gap-2">
+          <Cpu size={18} className="text-accent mt-0.5" />
           <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">接入协议</label>
-            <select
-              value={provider}
-              onChange={(e) => handleProviderChange(e.target.value)}
-              className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
-            >
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-              {!providers.some((p) => p.id === provider) && <option value={provider}>{provider}</option>}
-            </select>
-            {meta?.hint && <p className="text-xs text-muted-foreground mt-1.5">{meta.hint}</p>}
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">对话模型</label>
-            {showModelSelect ? (
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
-              >
-                {modelOptions.map((m) => (
-                  <option key={m.modelId} value={m.modelId}>
-                    {m.name}
-                  </option>
-                ))}
-                {!modelOptions.some((m) => m.modelId === model) && model && <option value={model}>{model}</option>}
-              </select>
-            ) : (
-              <input
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={provider === 'gemini' ? '如 gemini-2.5-flash' : provider === 'anthropic' ? '如 claude-sonnet-4-20250514' : '如 gpt-4o-mini'}
-                className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
-              />
-            )}
-            <p className="text-xs text-muted-foreground mt-1.5">AI 自动应答、意图识别与工具调用均运行于该模型。</p>
+            <h3 className="text-sm font-semibold">模型配置</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              接入自定义大模型端点（OpenAI 兼容协议），保存后立即生效；未配置时使用平台默认接入。
+            </p>
           </div>
         </div>
 
-        {/* 端点 + 探测（非 auto 协议显示） */}
-        {!isAuto && (
-          <div className="space-y-3 border-t border-border pt-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">端点（Endpoint）</label>
-                <input
-                  value={endpoint}
-                  onChange={(e) => setEndpoint(e.target.value)}
-                  placeholder={endpointPlaceholder}
-                  className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
-                />
-                <p className="text-xs text-muted-foreground mt-1.5">OpenAI 兼容填至 /v1 层级；其余协议填根地址，系统自动拼接路径。</p>
-              </div>
-              <div className="flex flex-col justify-end">
-                <button
-                  onClick={handleDiscover}
-                  disabled={discovering || !meta?.discoverable}
-                  className="inline-flex items-center justify-center gap-1.5 text-sm px-4 py-2 min-h-[44px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50"
-                  title={meta?.discoverable ? '按端点自动拉取可用模型' : '该协议无需探测'}
-                >
-                  {discovering ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
-                  {discovering ? '探测中…' : '探测可用模型'}
-                </button>
-              </div>
-            </div>
-            {discoverNote && (
-              <div
-                className={`rounded-xl border px-4 py-2 text-sm ${
-                  discoverNote.startsWith('探测失败')
-                    ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                    : 'border-accent/40 bg-accent/10 text-accent'
-                }`}
-              >
-                {discoverNote}
-              </div>
-            )}
+        {onPlatformDefault && nothingConfigured && (
+          <div className="rounded-xl border border-border bg-muted/40 text-xs text-muted-foreground px-4 py-2.5">
+            当前使用<b className="text-foreground">平台默认接入</b>（CodeBuddy Agent SDK）。填写下方自定义模型并保存后切换。
           </div>
         )}
-      </div>
 
-      {/* API 密钥 */}
-      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-2">
-        <div className="flex items-center gap-2">
-          <KeyRound size={16} className="text-accent" />
-          <h3 className="text-sm font-medium">API 密钥</h3>
-          {config?.hasApiKey && <span className="text-xs px-1.5 py-0.5 rounded-full bg-success/15 text-success">已设置</span>}
+        {/* 供应商（仅支持 OpenAI 兼容协议 API） */}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">供应商（仅支持 OpenAI 兼容协议 API）</label>
+          <select
+            value={preset}
+            onChange={(e) => handlePresetChange(e.target.value)}
+            className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+          >
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.id === 'custom' ? `✦ ${p.label}` : p.label}
+              </option>
+            ))}
+            {!presets.some((p) => p.id === preset) && <option value={preset}>{preset}</option>}
+          </select>
+          {activePreset?.hint && <p className="text-xs text-muted-foreground mt-1.5">{activePreset.hint}</p>}
         </div>
-        <input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={config?.hasApiKey ? '如需更换请填写新密钥，留空保持不变' : '填写后保存即生效（明文仅存储于数据库）'}
-          className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
-        />
-        <p className="text-xs text-muted-foreground">
-          留空表示不更改现有密钥。密钥经环境变量/请求头透传至模型网关（best-effort，取决于部署形态）。
-        </p>
+
+        {/* 接口地址 */}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">接口地址</label>
+          <input
+            value={endpoint}
+            onChange={(e) => {
+              setEndpoint(e.target.value);
+              setSavedTip(null);
+            }}
+            placeholder="https://api.example.com/v1/chat/completions"
+            className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+          />
+          <p className="text-xs text-muted-foreground mt-1.5">
+            填完整接口地址（至 /chat/completions）；也支持 /v1 层级或根地址，系统自动拼接路径。
+          </p>
+        </div>
+
+        {/* API Key + 测试连接 */}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">API Key</label>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={config?.hasApiKey ? '如需更换请填写新密钥，留空保持不变' : '输入你的 API Key'}
+                className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 pr-10 text-sm focus:border-accent outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground hover:text-foreground"
+                title={showKey ? '隐藏密钥' : '显示密钥'}
+              >
+                {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+            <button
+              onClick={handleTest}
+              disabled={testing}
+              className="inline-flex items-center justify-center gap-1.5 text-sm px-4 min-h-[44px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50 shrink-0"
+            >
+              {testing ? <Loader2 size={15} className="animate-spin" /> : <PlugZap size={15} />}
+              {testing ? '测试中…' : '测试连接'}
+            </button>
+          </div>
+          {testResult && (
+            <p
+              className={`text-xs mt-1.5 ${
+                testResult.ok ? 'text-success' : 'text-destructive'
+              }`}
+            >
+              {testResult.ok
+                ? `连接成功 · 模型 ${testResult.usedModel} · 耗时 ${testResult.latencyMs}ms${testResult.reply ? ` · 回复「${testResult.reply}」` : ''}`
+                : `连接失败：${testResult.error}`}
+            </p>
+          )}
+        </div>
+
+        {/* 模型名称 + 探测 */}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">模型名称</label>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              value={model}
+              onChange={(e) => {
+                setModel(e.target.value);
+                setSavedTip(null);
+              }}
+              placeholder="输入模型参数，例如 gpt-4o 或 openai/gpt-4o"
+              className="flex-1 min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+            />
+            <button
+              onClick={handleDiscover}
+              disabled={discovering || !canDiscover}
+              className="inline-flex items-center justify-center gap-1.5 text-sm px-4 min-h-[44px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50 shrink-0"
+              title={canDiscover ? '按接口地址自动拉取可用模型' : '请先填写接口地址（auto 模式无需探测）'}
+            >
+              {discovering ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+              {discovering ? '探测中…' : '探测可用模型'}
+            </button>
+          </div>
+          {discoverNote && (
+            <p
+              className={`text-xs mt-1.5 ${
+                discoverNote.startsWith('探测失败') ? 'text-destructive' : 'text-accent'
+              }`}
+            >
+              {discoverNote}
+            </p>
+          )}
+          {discoveredModels.length > 0 && (
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full mt-2 min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+            >
+              {discoveredModels.map((m) => (
+                <option key={m.modelId} value={m.modelId}>
+                  {m.name}
+                </option>
+              ))}
+              {model && !discoveredModels.some((m) => m.modelId === model) && <option value={model}>{model}</option>}
+            </select>
+          )}
+          <p className="text-xs text-muted-foreground mt-1.5">AI 自动应答、意图识别与工具调用均运行于该模型。</p>
+        </div>
+
+        {/* 高级配置 */}
+        <div className="border-t border-border pt-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Settings2 size={14} className="text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground">高级配置</span>
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            <CapCheckbox
+              label="工具调用"
+              checked={toolCalling}
+              onChange={setToolCalling}
+              title="关闭后模型以纯对话模式运行，不注入知识库/订单/建单工具"
+            />
+            <CapCheckbox
+              label="图片输入"
+              checked={imageInput}
+              onChange={setImageInput}
+              title="允许向支持视觉的模型传递图片（多模态客服场景预留）"
+            />
+            <CapCheckbox
+              label="思考模式"
+              checked={thinkingMode}
+              onChange={setThinkingMode}
+              title="对支持思考的模型生效（如智谱 GLM-4.5+）"
+            />
+            <CapCheckbox
+              label="自定义协议"
+              checked={customProtocol}
+              onChange={handleCustomProtocolToggle}
+              title="展开后可切换 Anthropic / Gemini 等非 OpenAI 兼容协议"
+            />
+          </div>
+
+          {customProtocol && (
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">接入协议</label>
+              <select
+                value={provider}
+                onChange={(e) => handleProviderChange(e.target.value)}
+                className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+              >
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              {meta?.hint && <p className="text-xs text-muted-foreground mt-1.5">{meta.hint}</p>}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">输入</label>
+              <input
+                type="number"
+                min={TOKEN_MIN}
+                max={TOKEN_MAX}
+                value={maxInputTokens}
+                onChange={(e) => setMaxInputTokens(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="使用提供商默认值"
+                className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+              />
+              <p className="text-xs text-muted-foreground mt-1.5">最大输入 Tokens（上下文预算，超出自动裁剪早期对话）</p>
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1.5">输出</label>
+              <input
+                type="number"
+                min={TOKEN_MIN}
+                max={TOKEN_MAX}
+                value={maxOutputTokens}
+                onChange={(e) => setMaxOutputTokens(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="使用提供商默认值"
+                className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+              />
+              <p className="text-xs text-muted-foreground mt-1.5">最大输出 Tokens（单次回复上限）</p>
+            </div>
+          </div>
+        </div>
+
+        {/* 页脚：恢复平台默认 / 取消 / 保存 */}
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+          <div>
+            {!onPlatformDefault && (
+              <button
+                onClick={handleResetPlatform}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 min-h-[36px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50"
+                title="清空自定义模型，回到平台默认 SDK 接入"
+              >
+                <RotateCcw size={13} /> 恢复平台默认
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={load}
+              disabled={saving}
+              className="inline-flex items-center text-sm px-4 min-h-[44px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 text-sm px-5 min-h-[44px] rounded-lg bg-accent text-accent-foreground hover:opacity-90 transition-base disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              {saving ? '保存中…' : '保存'}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* 温度 + 最大回复长度 */}
+      {/* ============ 生成参数 ============ */}
       <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-5">
         <div className="flex items-center gap-2">
           <Thermometer size={16} className="text-accent" />
@@ -323,7 +612,7 @@ export function LlmSettings() {
         </div>
       </div>
 
-      {/* 系统提示词 */}
+      {/* ============ 系统提示词 ============ */}
       <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -350,7 +639,7 @@ export function LlmSettings() {
         </p>
       </div>
 
-      {/* 操作区 */}
+      {/* ============ 底部操作区 ============ */}
       <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={handleSave}
@@ -368,26 +657,8 @@ export function LlmSettings() {
           {testing ? <Loader2 size={15} className="animate-spin" /> : <FlaskConical size={15} />}
           {testing ? '测试中…' : '测试连接'}
         </button>
+        <span className="text-xs text-muted-foreground">保存后立即生效；测试连接使用表单当前值，无需先保存。</span>
       </div>
-
-      {/* 测试结果 */}
-      {testResult && (
-        <div
-          className={`rounded-xl border px-4 py-3 text-sm ${
-            testResult.ok
-              ? 'border-success/40 bg-success/10 text-success'
-              : 'border-destructive/40 bg-destructive/10 text-destructive'
-          }`}
-        >
-          {testResult.ok ? (
-            <p>
-              连接成功 · 模型 <span className="font-medium">{testResult.usedModel}</span> · 耗时 {testResult.latencyMs}ms
-            </p>
-          ) : (
-            <p>连接失败：{testResult.error}</p>
-          )}
-        </div>
-      )}
     </div>
   );
 }

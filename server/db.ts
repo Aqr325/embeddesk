@@ -512,6 +512,20 @@ const migrations: Migration[] = [
       ensureColumn('llm_config', 'provider', "provider TEXT NOT NULL DEFAULT 'auto'");
     },
   },
+  {
+    // WorkBuddy 式接入高级配置：能力开关（工具调用/图片输入/思考模式/自定义协议）
+    // + token 限额（输入=上下文预算、输出=单次回复上限；NULL = 使用提供商默认值）。
+    version: 18,
+    name: 'LLM 配置：llm_config 高级配置（能力开关 + token 限额）',
+    up: () => {
+      ensureColumn('llm_config', 'tool_calling', 'tool_calling INTEGER NOT NULL DEFAULT 1');
+      ensureColumn('llm_config', 'image_input', 'image_input INTEGER NOT NULL DEFAULT 0');
+      ensureColumn('llm_config', 'thinking_mode', 'thinking_mode INTEGER NOT NULL DEFAULT 0');
+      ensureColumn('llm_config', 'custom_protocol', 'custom_protocol INTEGER NOT NULL DEFAULT 0');
+      ensureColumn('llm_config', 'max_input_tokens', 'max_input_tokens INTEGER');
+      ensureColumn('llm_config', 'max_output_tokens', 'max_output_tokens INTEGER');
+    },
+  },
 ];
 
 /** 按 user_version 顺序应用未执行的迁移，保证 schema 演进可追踪、幂等、可重放 */
@@ -1597,6 +1611,14 @@ export interface DbLlmConfig {
   temperature: number;
   maxReplyLength: number;
   systemPrompt: string;
+  /** 高级配置：能力开关（0/1）。工具调用默认开；图片输入/思考模式/自定义协议默认关 */
+  toolCalling: number;
+  imageInput: number;
+  thinkingMode: number;
+  customProtocol: number;
+  /** 高级配置：token 限额（NULL = 使用提供商默认值）。输入=上下文预算，输出=单次回复上限 */
+  maxInputTokens: number | null;
+  maxOutputTokens: number | null;
   updatedAt: string;
 }
 
@@ -1604,7 +1626,9 @@ export interface DbLlmConfig {
 export function getLlmConfig(): DbLlmConfig {
   const row = db
     .prepare(
-      `SELECT provider, model, api_key, endpoint, temperature, max_reply_length, system_prompt, updated_at FROM llm_config WHERE id = 1`,
+      `SELECT provider, model, api_key, endpoint, temperature, max_reply_length, system_prompt,
+              tool_calling, image_input, thinking_mode, custom_protocol, max_input_tokens, max_output_tokens, updated_at
+       FROM llm_config WHERE id = 1`,
     )
     .get() as
     | {
@@ -1615,6 +1639,12 @@ export function getLlmConfig(): DbLlmConfig {
         temperature: number;
         max_reply_length: number;
         system_prompt: string;
+        tool_calling: number;
+        image_input: number;
+        thinking_mode: number;
+        custom_protocol: number;
+        max_input_tokens: number | null;
+        max_output_tokens: number | null;
         updated_at: string;
       }
     | undefined;
@@ -1626,6 +1656,12 @@ export function getLlmConfig(): DbLlmConfig {
     temperature: typeof row?.temperature === 'number' ? row.temperature : 0.7,
     maxReplyLength: typeof row?.max_reply_length === 'number' ? row.max_reply_length : 600,
     systemPrompt: row?.system_prompt ?? '',
+    toolCalling: typeof row?.tool_calling === 'number' ? row.tool_calling : 1,
+    imageInput: typeof row?.image_input === 'number' ? row.image_input : 0,
+    thinkingMode: typeof row?.thinking_mode === 'number' ? row.thinking_mode : 0,
+    customProtocol: typeof row?.custom_protocol === 'number' ? row.custom_protocol : 0,
+    maxInputTokens: typeof row?.max_input_tokens === 'number' ? row.max_input_tokens : null,
+    maxOutputTokens: typeof row?.max_output_tokens === 'number' ? row.max_output_tokens : null,
     updatedAt: row?.updated_at ?? '',
   };
 }
@@ -1641,10 +1677,17 @@ export function saveLlmConfig(patch: Partial<Omit<DbLlmConfig, 'updatedAt'>>): D
     temperature: patch.temperature !== undefined ? patch.temperature : current.temperature,
     maxReplyLength: patch.maxReplyLength !== undefined ? patch.maxReplyLength : current.maxReplyLength,
     systemPrompt: patch.systemPrompt !== undefined ? patch.systemPrompt : current.systemPrompt,
+    toolCalling: patch.toolCalling !== undefined ? patch.toolCalling : current.toolCalling,
+    imageInput: patch.imageInput !== undefined ? patch.imageInput : current.imageInput,
+    thinkingMode: patch.thinkingMode !== undefined ? patch.thinkingMode : current.thinkingMode,
+    customProtocol: patch.customProtocol !== undefined ? patch.customProtocol : current.customProtocol,
+    maxInputTokens: patch.maxInputTokens !== undefined ? patch.maxInputTokens : current.maxInputTokens,
+    maxOutputTokens: patch.maxOutputTokens !== undefined ? patch.maxOutputTokens : current.maxOutputTokens,
     updatedAt: new Date().toISOString(),
   };
   db.prepare(
-    `UPDATE llm_config SET provider = ?, model = ?, api_key = ?, endpoint = ?, temperature = ?, max_reply_length = ?, system_prompt = ?, updated_at = ? WHERE id = 1`,
+    `UPDATE llm_config SET provider = ?, model = ?, api_key = ?, endpoint = ?, temperature = ?, max_reply_length = ?, system_prompt = ?,
+       tool_calling = ?, image_input = ?, thinking_mode = ?, custom_protocol = ?, max_input_tokens = ?, max_output_tokens = ?, updated_at = ? WHERE id = 1`,
   ).run(
     next.provider,
     next.model,
@@ -1653,6 +1696,12 @@ export function saveLlmConfig(patch: Partial<Omit<DbLlmConfig, 'updatedAt'>>): D
     next.temperature,
     next.maxReplyLength,
     next.systemPrompt,
+    next.toolCalling,
+    next.imageInput,
+    next.thinkingMode,
+    next.customProtocol,
+    next.maxInputTokens,
+    next.maxOutputTokens,
     next.updatedAt,
   );
   return next;

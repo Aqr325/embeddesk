@@ -207,6 +207,14 @@ export interface LlmConfigPublic {
   temperature: number;
   maxReplyLength: number;
   systemPrompt: string;
+  /** 高级配置：能力开关 */
+  toolCalling: boolean;
+  imageInput: boolean;
+  thinkingMode: boolean;
+  customProtocol: boolean;
+  /** 高级配置：token 限额（null = 使用提供商默认值） */
+  maxInputTokens: number | null;
+  maxOutputTokens: number | null;
   updatedAt: string;
 }
 
@@ -225,6 +233,15 @@ export interface ProviderMeta {
   discoverable: boolean;
   defaultEndpoint: string;
   endpointPlaceholder: string;
+  hint: string;
+}
+
+/** 供应商预设（来自 /api/models 的 presets 字段；仅 OpenAI 兼容协议 API） */
+export interface ProviderPreset {
+  id: string;
+  label: string;
+  endpoint: string;
+  defaultModel: string;
   hint: string;
 }
 
@@ -277,7 +294,15 @@ export const api = {
   getMeta: () => http<AppMeta & { mode: string; engine: string }>('/meta'),
 
   /** 公开模型列表 + 协议元信息（无需鉴权），供「模型配置」下拉框使用 */
-  getModels: () => http<{ models: Array<{ modelId: string; name: string }>; defaultModel: string; sdkBroken: boolean; providers: ProviderMeta[]; defaultProvider: string }>('/models'),
+  getModels: () =>
+    http<{
+      models: Array<{ modelId: string; name: string }>;
+      defaultModel: string;
+      sdkBroken: boolean;
+      providers: ProviderMeta[];
+      presets: ProviderPreset[];
+      defaultProvider: string;
+    }>('/models'),
 
   listSessions: () => http<{ sessions: SessionDTO[] }>('/sessions'),
 
@@ -445,14 +470,34 @@ export const api = {
   /* ---------- 大模型（LLM）配置 ---------- */
   getLlmConfig: () => http<{ config: LlmConfigPublic }>('/admin/llm-config'),
 
-  saveLlmConfig: (data: Partial<Pick<LlmConfigPublic, 'provider' | 'model' | 'endpoint' | 'temperature' | 'maxReplyLength' | 'systemPrompt'>> & { apiKey?: string }) =>
+  saveLlmConfig: (
+    data: Partial<
+      Pick<
+        LlmConfigPublic,
+        | 'provider'
+        | 'model'
+        | 'endpoint'
+        | 'temperature'
+        | 'maxReplyLength'
+        | 'systemPrompt'
+        | 'toolCalling'
+        | 'imageInput'
+        | 'thinkingMode'
+        | 'customProtocol'
+        | 'maxInputTokens'
+        | 'maxOutputTokens'
+      >
+    > & { apiKey?: string },
+  ) =>
     http<{ config: LlmConfigPublic }>('/admin/llm-config', { method: 'POST', body: JSON.stringify(data) }),
 
   /** 探测可用模型：按协议 + 端点 + 密钥拉取端点可用模型列表 */
   discoverModels: (data: { provider: string; endpoint?: string; apiKey?: string }) =>
     http<DiscoverResult>('/admin/llm-config/discover', { method: 'POST', body: JSON.stringify(data) }),
 
-  testLlmConfig: () => http<LlmConfigTestResult>('/admin/llm-config/test', { method: 'POST' }),
+  /** 测试连接：可传「表单当前值」（未保存）做保存前验证；不传则用已保存配置 */
+  testLlmConfig: (data?: { provider?: string; endpoint?: string; apiKey?: string; model?: string }) =>
+    http<LlmConfigTestResult>('/admin/llm-config/test', { method: 'POST', body: JSON.stringify(data ?? {}) }),
 
   /* ---------- 知识盲区自学习（企业知识助手） ---------- */
   getKnowledgeGaps: (status = 'pending') =>

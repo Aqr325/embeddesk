@@ -1,14 +1,17 @@
 /**
  * 多协议大模型直连接入层（Hack2skill 改装方案 §5：可接入多种协议端点）
  *
- * 目标：管理后台「模型配置」选择非 auto 协议（OpenAI 兼容 / Anthropic / Gemini）时，
- *   - discoverModels：填入端点后自动探测该端点可用模型列表（前端下拉自动填充）；
- *   - callOpenAiCompatible / callAnthropic：原生 fetch 直连生成（含 function calling 工具循环），
+ * 目标：管理后台「模型配置」按 WorkBuddy 式方案接入——供应商预设（仅 OpenAI 兼容协议 API）、
+ *   - discoverModels：填入接口地址后自动探测该端点可用模型列表（前端下拉自动填充）；
+ *   - testProviderConnection：保存前用「表单当前值」做最小真实请求，即「测试连接」；
+ *   - callOpenAiCompatible / callAnthropic：原生 fetch 直连生成（含 function calling 工具循环，
+ *     受高级配置「工具调用 / 输入输出 Tokens / 思考模式」开关控制），
  *     与 geminiAgent.callAgentGemini 保持 CallAgentResult 同构，失败时降级知识库直答。
  *
  * 设计要点：
  *   - 零新依赖：复用原生 fetch（超时 + 5xx/429 退避重试），工具执行复用 agentTools；
  *   - 工具集与 agentTools.ts / geminiAgent.ts 保持一致（4 个客服领域工具）；
+ *   - 接口地址归一化：完整 URL（…/chat/completions）/ 版本层级（…/v1）/ 根地址均可；
  *   - 应用层硬截断 + 转人工标记保护，与 SDK / Gemini 路径一致；
  *   - 降级复用 geminiAgent.knowledgeFallback，保证无 hit 时行为一致（抛错交由调用方链决定）。
  */
@@ -176,11 +179,21 @@ async function fetchWithRetry(url: string, init: RequestInit, maxAttempts = 3): 
 
 /* ============================ 端点归一化 ============================ */
 
-/** 归一化 OpenAI 兼容 base（确保以 /v1 结尾） */
-function openaiBase(endpoint: string): string {
-  const e = (endpoint || '').replace(/\/+$/, '');
-  if (/\/v\d+$/.test(e)) return e; // 已含版本段（如 /v1）
-  return `${e}/v1`;
+/**
+ * 归一化 OpenAI 兼容 chat/completions 完整地址（WorkBuddy 式：接口地址填完整路径）。
+ * 接受三种形态：完整 URL（…/chat/completions）、版本层级（…/v1、…/v4）、根地址。
+ */
+export function openaiChatUrl(endpoint: string): string {
+  const e = (endpoint || '').trim().replace(/\/+$/, '');
+  if (!e) return 'https://api.openai.com/v1/chat/completions';
+  if (/\/chat\/completions$/.test(e)) return e;
+  if (/\/v\d+[a-z]*$/i.test(e)) return `${e}/chat/completions`;
+  return `${e}/v1/chat/completions`;
+}
+
+/** 由接口地址推导 /models 探测地址（剥离 chat/completions 段） */
+function openaiModelsUrl(endpoint: string): string {
+  return openaiChatUrl(endpoint).replace(/\/chat\/completions$/, '') + '/models';
 }
 
 /** 归一化 Anthropic base（确保以 /v1 结尾） */
@@ -188,6 +201,14 @@ function anthropicBase(endpoint: string): string {
   const e = (endpoint || '').replace(/\/+$/, '');
   if (/\/v\d+$/.test(e)) return e;
   return `${e}/v1`;
+}
+
+/** 按输入 token 预算裁剪历史（粗略 1 token ≈ 2 字符，中英混合），保留最近消息 */
+function fitPrompt(prompt: string, maxInputTokens: number | null): string {
+  if (!maxInputTokens) return prompt;
+  const budget = Math.max(1000, maxInputTokens * 2);
+  if (prompt.length <= budget) return prompt;
+  return `…（早期对话已按输入上限 ${maxInputTokens} tokens 裁剪）\n` + prompt.slice(-budget);
 }
 
 /** 应用层硬截断（与 SDK / Gemini 路径一致；含转人工标记时不截断） */
@@ -225,9 +246,8 @@ export async function discoverModels(
   const p = provider as ProviderId;
   try {
     if (p === 'openai') {
-      const base = openaiBase(endpoint);
-      if (!base) return { ok: false, error: '请先填写 OpenAI 兼容端点' };
-      const url = `${base}/models`;
+      if (!(endpoint || '').trim()) return { ok: false, error: '请先填写接口地址（完整 URL，如 https://api.example.com/v1/chat/completions）' };
+      const url = openaiModelsUrl(endpoint);
       const resp = await fetchWithRetry(url, {
         method: 'GET',
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
@@ -285,30 +305,35 @@ export async function discoverModels(
 /** OpenAI 兼容（/v1/chat/completions）生成，含 function calling 循环；失败降级知识库直答 */
 export async function callOpenAiCompatible(opts: CallAgentOptions): Promise<CallAgentResult> {
   const cfg = getResolvedConfig();
-  const base = openaiBase(cfg.endpoint);
-  const url = `${base}/chat/completions`;
+  const url = openaiChatUrl(cfg.endpoint);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (cfg.apiKey && cfg.apiKey.trim()) headers['Authorization'] = `Bearer ${cfg.apiKey.trim()}`;
 
   const bundle = opts.toolCtx ? createCsaAgentTools(opts.toolCtx) : null;
-  const tools = bundle
-    ? CSA_TOOL_DEFS.filter((d) => bundle.tools.some((t) => t.name === d.name)).map((d) => ({
-        type: 'function',
-        function: { name: d.name, description: d.description, parameters: d.parameters },
-      }))
-    : null;
+  // 高级配置「工具调用」关闭时不注入工具（纯对话模式）
+  const tools =
+    bundle && cfg.toolCalling
+      ? CSA_TOOL_DEFS.filter((d) => bundle.tools.some((t) => t.name === d.name)).map((d) => ({
+          type: 'function',
+          function: { name: d.name, description: d.description, parameters: d.parameters },
+        }))
+      : null;
 
   const messages: Array<Record<string, unknown>> = [
     { role: 'system', content: opts.systemPrompt },
-    { role: 'user', content: opts.prompt },
+    { role: 'user', content: fitPrompt(opts.prompt, cfg.maxInputTokens) },
   ];
   const body: Record<string, unknown> = {
     model: opts.model,
     temperature: cfg.temperature,
-    max_tokens: 2048,
+    max_tokens: cfg.maxOutputTokens ?? 2048,
     messages,
     ...(tools ? { tools, tool_choice: 'auto' } : {}),
   };
+  // 思考模式：智谱端点（GLM-4.5+）启用 thinking 参数；其余 OpenAI 兼容网关忽略未知字段风险高，不注入
+  if (cfg.thinkingMode && /open\.bigmodel\.cn/i.test(url)) {
+    body.thinking = { type: 'enabled' };
+  }
 
   try {
     for (let round = 1; round <= MAX_ROUNDS; round++) {
@@ -376,18 +401,20 @@ export async function callAnthropic(opts: CallAgentOptions): Promise<CallAgentRe
   if (cfg.apiKey && cfg.apiKey.trim()) headers['x-api-key'] = cfg.apiKey.trim();
 
   const bundle = opts.toolCtx ? createCsaAgentTools(opts.toolCtx) : null;
-  const tools = bundle
-    ? CSA_TOOL_DEFS.filter((d) => bundle.tools.some((t) => t.name === d.name)).map((d) => ({
-        name: d.name,
-        description: d.description,
-        input_schema: d.parameters,
-      }))
-    : null;
+  // 高级配置「工具调用」关闭时不注入工具（纯对话模式）
+  const tools =
+    bundle && cfg.toolCalling
+      ? CSA_TOOL_DEFS.filter((d) => bundle.tools.some((t) => t.name === d.name)).map((d) => ({
+          name: d.name,
+          description: d.description,
+          input_schema: d.parameters,
+        }))
+      : null;
 
-  const messages: Array<Record<string, unknown>> = [{ role: 'user', content: opts.prompt }];
+  const messages: Array<Record<string, unknown>> = [{ role: 'user', content: fitPrompt(opts.prompt, cfg.maxInputTokens) }];
   const body: Record<string, unknown> = {
     model: opts.model,
-    max_tokens: 2048,
+    max_tokens: cfg.maxOutputTokens ?? 2048,
     system: opts.systemPrompt,
     messages,
     ...(tools ? { tools } : {}),
@@ -443,5 +470,109 @@ export async function callAnthropic(opts: CallAgentOptions): Promise<CallAgentRe
       return { text: '', usedModel: `anthropic:${opts.model}`, captured: bundle.captured };
     }
     return knowledgeFallback(opts, String(e?.message || e).slice(0, 160));
+  }
+}
+
+/* ============================ 测试连接（保存前，表单值直连） ============================ */
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  usedModel?: string;
+  latencyMs: number;
+  reply?: string;
+  error?: string;
+}
+
+/**
+ * 测试连接：用「表单当前值」（未保存）做一次最小真实请求，供「测试连接」按钮即时验证。
+ * - openai：POST {chatUrl}，messages=[{user:'ping'}]，max_tokens=16；
+ * - anthropic：POST {base}/messages，x-api-key 鉴权；
+ * - gemini：POST v1beta/models/{model}:generateContent?key=；
+ * - auto：平台默认 SDK 路径不适用（提示保存后测试）。
+ */
+export async function testProviderConnection(input: {
+  provider: string;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+}): Promise<ConnectionTestResult> {
+  const t0 = Date.now();
+  const p = input.provider;
+  try {
+    if (p === 'openai') {
+      const url = openaiChatUrl(input.endpoint);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (input.apiKey.trim()) headers['Authorization'] = `Bearer ${input.apiKey.trim()}`;
+      const resp = await fetchWithRetry(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: input.model,
+          max_tokens: 16,
+          temperature: 0,
+          messages: [{ role: 'user', content: 'ping' }],
+        }),
+      });
+      if (!resp.ok) {
+        const detail = (await resp.text().catch(() => '')).slice(0, 160);
+        return { ok: false, error: `HTTP_${resp.status}: ${detail}`, latencyMs: Date.now() - t0 };
+      }
+      const j = (await resp.json()) as any;
+      const text = String(j?.choices?.[0]?.message?.content ?? '').trim();
+      return { ok: true, usedModel: `openai:${input.model}`, latencyMs: Date.now() - t0, reply: text.slice(0, 60) || '（已连通）' };
+    }
+
+    if (p === 'anthropic') {
+      const url = `${anthropicBase(input.endpoint)}/messages`;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+      };
+      if (input.apiKey.trim()) headers['x-api-key'] = input.apiKey.trim();
+      const resp = await fetchWithRetry(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: input.model,
+          max_tokens: 16,
+          messages: [{ role: 'user', content: 'ping' }],
+        }),
+      });
+      if (!resp.ok) {
+        const detail = (await resp.text().catch(() => '')).slice(0, 160);
+        return { ok: false, error: `HTTP_${resp.status}: ${detail}`, latencyMs: Date.now() - t0 };
+      }
+      const j = (await resp.json()) as any;
+      const blocks: Array<{ type: string; text?: string }> = Array.isArray(j?.content) ? j.content : [];
+      const text = blocks.filter((b) => b.type === 'text').map((b) => b.text || '').join('').trim();
+      return { ok: true, usedModel: `anthropic:${input.model}`, latencyMs: Date.now() - t0, reply: text.slice(0, 60) || '（已连通）' };
+    }
+
+    if (p === 'gemini') {
+      const key = input.apiKey.trim() || process.env.GEMINI_API_KEY || '';
+      if (!key) return { ok: false, error: '请先填写 API Key（或配置 GEMINI_API_KEY 环境变量）', latencyMs: Date.now() - t0 };
+      const model = input.model || 'gemini-2.5-flash';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+      const resp = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+          generationConfig: { maxOutputTokens: 16 },
+        }),
+      });
+      if (!resp.ok) {
+        const detail = (await resp.text().catch(() => '')).slice(0, 160);
+        return { ok: false, error: `HTTP_${resp.status}: ${detail}`, latencyMs: Date.now() - t0 };
+      }
+      const j = (await resp.json()) as any;
+      const parts: Array<{ text?: string }> = j?.candidates?.[0]?.content?.parts ?? [];
+      const text = parts.map((x) => x.text || '').join('').trim();
+      return { ok: true, usedModel: `gemini:${model}`, latencyMs: Date.now() - t0, reply: text.slice(0, 60) || '（已连通）' };
+    }
+
+    return { ok: false, error: 'auto（平台默认）模式请保存配置后再测试', latencyMs: Date.now() - t0 };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e).slice(0, 200), latencyMs: Date.now() - t0 };
   }
 }
