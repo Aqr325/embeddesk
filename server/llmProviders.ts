@@ -219,6 +219,12 @@ function truncate(text: string, limit: number): string {
   return text;
 }
 
+/** 从响应 usage 字段提取有限数字（否则 undefined，避免把 null/NaN 写进埋点） */
+function numOrUndef(v: unknown): number | undefined {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 /* ============================ 探测可用模型 ============================ */
 
 export interface DiscoveredModel {
@@ -303,7 +309,7 @@ export async function discoverModels(
 /* ============================ OpenAI 兼容直连 ============================ */
 
 /** OpenAI 兼容（/v1/chat/completions）生成，含 function calling 循环；失败降级知识库直答 */
-export async function callOpenAiCompatible(opts: CallAgentOptions): Promise<CallAgentResult> {
+export async function callOpenAiCompatible(opts: CallAgentOptions, fallbackToKb = true): Promise<CallAgentResult> {
   const cfg = getResolvedConfig();
   const url = openaiChatUrl(cfg.endpoint);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -351,7 +357,15 @@ export async function callOpenAiCompatible(opts: CallAgentOptions): Promise<Call
       if (!toolCalls.length) {
         const text = texts.join('').trim();
         if (!text) throw new Error('OPENAI_EMPTY_RESPONSE');
-        return { text: truncate(text, cfg.maxReplyLength), usedModel: `openai:${opts.model}`, captured: bundle?.captured };
+        return {
+          text: truncate(text, cfg.maxReplyLength),
+          usedModel: `openai:${opts.model}`,
+          captured: bundle?.captured,
+          usage: {
+            promptTokens: numOrUndef(j?.usage?.prompt_tokens),
+            completionTokens: numOrUndef(j?.usage?.completion_tokens),
+          },
+        };
       }
 
       // 回灌助手消息（含 tool_calls）+ 工具结果，继续循环
@@ -386,6 +400,8 @@ export async function callOpenAiCompatible(opts: CallAgentOptions): Promise<Call
       logger.warn(`[llmProviders] OpenAI 调用失败但已建单 ${bundle.captured.tickets.length} 张，保留副作用返回`);
       return { text: '', usedModel: `openai:${opts.model}`, captured: bundle.captured };
     }
+    // fallbackToKb=false：抛错交由上层（agentCore）编排引擎回退链
+    if (!fallbackToKb) throw e;
     return knowledgeFallback(opts, String(e?.message || e).slice(0, 160));
   }
 }
@@ -393,7 +409,7 @@ export async function callOpenAiCompatible(opts: CallAgentOptions): Promise<Call
 /* ============================ Anthropic 直连 ============================ */
 
 /** Anthropic（/v1/messages）生成，含 tool_use 循环；失败降级知识库直答 */
-export async function callAnthropic(opts: CallAgentOptions): Promise<CallAgentResult> {
+export async function callAnthropic(opts: CallAgentOptions, fallbackToKb = true): Promise<CallAgentResult> {
   const cfg = getResolvedConfig();
   const base = anthropicBase(cfg.endpoint);
   const url = `${base}/messages`;
@@ -436,7 +452,15 @@ export async function callAnthropic(opts: CallAgentOptions): Promise<CallAgentRe
       if (!toolUses.length) {
         const text = texts.join('').trim();
         if (!text) throw new Error('ANTHROPIC_EMPTY_RESPONSE');
-        return { text: truncate(text, cfg.maxReplyLength), usedModel: `anthropic:${opts.model}`, captured: bundle?.captured };
+        return {
+          text: truncate(text, cfg.maxReplyLength),
+          usedModel: `anthropic:${opts.model}`,
+          captured: bundle?.captured,
+          usage: {
+            promptTokens: numOrUndef(j?.usage?.input_tokens),
+            completionTokens: numOrUndef(j?.usage?.output_tokens),
+          },
+        };
       }
 
       // 回灌助手消息（含工具调用块）+ tool_result，继续循环
@@ -469,6 +493,8 @@ export async function callAnthropic(opts: CallAgentOptions): Promise<CallAgentRe
       logger.warn(`[llmProviders] Anthropic 调用失败但已建单 ${bundle.captured.tickets.length} 张，保留副作用返回`);
       return { text: '', usedModel: `anthropic:${opts.model}`, captured: bundle.captured };
     }
+    // fallbackToKb=false：抛错交由上层（agentCore）编排引擎回退链
+    if (!fallbackToKb) throw e;
     return knowledgeFallback(opts, String(e?.message || e).slice(0, 160));
   }
 }

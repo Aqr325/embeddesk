@@ -17,8 +17,10 @@ import {
   Search,
   Settings2,
   PlugZap,
+  Activity,
+  RefreshCw,
 } from 'lucide-react';
-import { api, type LlmConfigPublic, type LlmConfigTestResult, type ProviderMeta, type ProviderPreset } from '../hooks/useApi';
+import { api, type LlmConfigPublic, type LlmConfigTestResult, type ProviderMeta, type ProviderPreset, type LlmMetrics } from '../hooks/useApi';
 
 const TEMP_MIN = 0;
 const TEMP_MAX = 1;
@@ -52,6 +54,42 @@ function CapCheckbox({
   );
 }
 
+/** 引擎标识 → 展示名（调用监控） */
+function engineLabel(provider: string): string {
+  const map: Record<string, string> = {
+    openai: 'OpenAI 兼容',
+    anthropic: 'Anthropic',
+    gemini: 'Gemini',
+    sdk: 'CodeBuddy SDK',
+    knowledge_base: '知识库直答',
+    unknown: '未知',
+  };
+  return map[provider] || provider;
+}
+
+/** 调用状态徽章（ok=正常 / degraded=降级 / error=失败） */
+function statusLabel(status: string): string {
+  const map: Record<string, string> = { ok: '正常', degraded: '降级', error: '失败' };
+  return map[status] || status;
+}
+
+function statusClass(status: string): string {
+  const map: Record<string, string> = {
+    ok: 'bg-success/15 text-success',
+    degraded: 'bg-warning/15 text-warning',
+    error: 'bg-destructive/15 text-destructive',
+  };
+  return map[status] || 'bg-muted text-muted-foreground';
+}
+
+/** ISO 时间 → MM-DD HH:mm（调用监控列表） */
+function formatLogTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function LlmSettings() {
   const [config, setConfig] = useState<LlmConfigPublic | null>(null);
   const [models, setModels] = useState<Array<{ modelId: string; name: string }>>([]);
@@ -77,6 +115,21 @@ export function LlmSettings() {
   const [maxReplyLength, setMaxReplyLength] = useState(600);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [discoveredModels, setDiscoveredModels] = useState<Array<{ modelId: string; name: string }>>([]);
+
+  // 调用监控（llm_call_logs 聚合）
+  const [metrics, setMetrics] = useState<LlmMetrics | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+
+  const loadMetrics = useCallback(async () => {
+    setMetricsLoading(true);
+    try {
+      setMetrics(await api.getLlmMetrics(7));
+    } catch {
+      // 监控数据加载失败不阻塞配置面板（best-effort）
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, []);
 
   // 高级配置
   const [toolCalling, setToolCalling] = useState(true);
@@ -125,7 +178,8 @@ export function LlmSettings() {
 
   useEffect(() => {
     load();
-  }, [load]);
+    loadMetrics();
+  }, [load, loadMetrics]);
 
   /* ---------- 供应商预设（仅 OpenAI 兼容协议 API） ---------- */
   const handlePresetChange = (id: string) => {
@@ -217,6 +271,7 @@ export function LlmSettings() {
       setError(e?.message || '测试连接失败');
     } finally {
       setTesting(false);
+      loadMetrics();
     }
   };
 
@@ -257,6 +312,7 @@ export function LlmSettings() {
       setSavedTip('配置已保存并立即生效');
       setApiKey(''); // 清空输入框，避免重复提交明文
       setTestResult(null);
+      loadMetrics();
     } catch (e: any) {
       setError(e?.message || '保存失败');
     } finally {
@@ -274,6 +330,7 @@ export function LlmSettings() {
       setConfig(res.config);
       setSavedTip('已恢复平台默认接入（CodeBuddy Agent SDK）');
       await load();
+      loadMetrics();
     } catch (e: any) {
       setError(e?.message || '恢复失败');
     } finally {
@@ -637,6 +694,121 @@ export function LlmSettings() {
         <p className="text-xs text-muted-foreground">
           仅「角色设定 / 语气」可自定义；工具调用许可、转人工规则、知识库与订单上下文注入由系统强制拼接，保障安全与业务正确性。
         </p>
+      </div>
+
+      {/* ============ 调用监控（llm_call_logs 聚合） ============ */}
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Activity size={16} className="text-accent" />
+            <h3 className="text-sm font-medium">调用监控</h3>
+            <span className="text-xs text-muted-foreground">最近 {metrics?.summary.sinceDays ?? 7} 天</span>
+          </div>
+          <button
+            onClick={loadMetrics}
+            disabled={metricsLoading}
+            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 min-h-[36px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50"
+            title="刷新调用监控数据"
+          >
+            {metricsLoading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            刷新
+          </button>
+        </div>
+
+        {metrics && metrics.summary.totalCalls > 0 ? (
+          <>
+            {/* 汇总瓦片 */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { label: '总调用', value: metrics.summary.totalCalls.toLocaleString(), sub: `成功率 ${(metrics.summary.successRate * 100).toFixed(1)}%` },
+                { label: '平均延迟', value: `${metrics.summary.avgLatencyMs} ms`, sub: `峰值 ${metrics.summary.maxLatencyMs} ms` },
+                { label: '降级次数', value: metrics.summary.degradedCount.toLocaleString(), sub: `降级率 ${(metrics.summary.fallbackRate * 100).toFixed(1)}%` },
+                { label: 'Token 用量', value: `${(metrics.summary.totalPromptTokens + metrics.summary.totalCompletionTokens).toLocaleString()}`, sub: `入 ${metrics.summary.totalPromptTokens.toLocaleString()} / 出 ${metrics.summary.totalCompletionTokens.toLocaleString()}` },
+              ].map((tile) => (
+                <div key={tile.label} className="rounded-xl border border-border bg-background px-3 py-2.5">
+                  <div className="text-xs text-muted-foreground">{tile.label}</div>
+                  <div className="text-lg font-semibold mt-0.5">{tile.value}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{tile.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 引擎明细 */}
+            {metrics.byEngine.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-muted-foreground border-b border-border">
+                      <th className="text-left font-medium py-1.5 pr-3">引擎</th>
+                      <th className="text-right font-medium py-1.5 px-2">调用</th>
+                      <th className="text-right font-medium py-1.5 px-2">正常</th>
+                      <th className="text-right font-medium py-1.5 px-2">降级</th>
+                      <th className="text-right font-medium py-1.5 px-2">失败</th>
+                      <th className="text-right font-medium py-1.5 px-2">平均延迟</th>
+                      <th className="text-right font-medium py-1.5 pl-2">Tokens</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.byEngine.map((e) => (
+                      <tr key={e.provider} className="border-b border-border/50">
+                        <td className="py-1.5 pr-3 font-medium">{engineLabel(e.provider)}</td>
+                        <td className="text-right py-1.5 px-2">{e.calls.toLocaleString()}</td>
+                        <td className="text-right py-1.5 px-2 text-success">{e.okCount.toLocaleString()}</td>
+                        <td className="text-right py-1.5 px-2 text-warning">{e.degradedCount.toLocaleString()}</td>
+                        <td className="text-right py-1.5 px-2 text-destructive">{e.errorCount.toLocaleString()}</td>
+                        <td className="text-right py-1.5 px-2">{e.avgLatencyMs} ms</td>
+                        <td className="text-right py-1.5 pl-2">{e.totalTokens.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* 最近调用 */}
+            <div>
+              <div className="text-xs text-muted-foreground mb-1.5">最近调用</div>
+              <div className="max-h-64 overflow-y-auto rounded-xl border border-border">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-card">
+                    <tr className="text-muted-foreground border-b border-border">
+                      <th className="text-left font-medium py-1.5 px-2.5">时间</th>
+                      <th className="text-left font-medium py-1.5 px-2">引擎</th>
+                      <th className="text-left font-medium py-1.5 px-2">模型</th>
+                      <th className="text-left font-medium py-1.5 px-2">渠道</th>
+                      <th className="text-left font-medium py-1.5 px-2">状态</th>
+                      <th className="text-right font-medium py-1.5 px-2">延迟</th>
+                      <th className="text-right font-medium py-1.5 px-2.5">Tokens</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.recent.map((r) => (
+                      <tr key={r.id} className="border-b border-border/50">
+                        <td className="py-1.5 px-2.5 text-muted-foreground whitespace-nowrap">{formatLogTime(r.time)}</td>
+                        <td className="py-1.5 px-2">{engineLabel(r.provider)}</td>
+                        <td className="py-1.5 px-2 font-mono text-muted-foreground max-w-[180px] truncate" title={r.model}>{r.model}</td>
+                        <td className="py-1.5 px-2 text-muted-foreground">{r.channel || '—'}</td>
+                        <td className="py-1.5 px-2">
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded ${statusClass(r.status)}`} title={r.error || ''}>
+                            {statusLabel(r.status)}
+                          </span>
+                        </td>
+                        <td className="text-right py-1.5 px-2">{r.latencyMs} ms</td>
+                        <td className="text-right py-1.5 px-2.5 text-muted-foreground">
+                          {(r.promptTokens ?? 0) + (r.completionTokens ?? 0) || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {metricsLoading ? '加载中…' : '暂无调用记录。发起一次对话（或点上方「测试连接」）后，此处将展示引擎、延迟、降级与 Token 用量。'}
+          </p>
+        )}
       </div>
 
       {/* ============ 底部操作区 ============ */}

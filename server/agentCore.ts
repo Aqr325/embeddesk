@@ -15,8 +15,9 @@ import { HANDOFF_TOKEN } from './handoff.js';
 import { createCsaAgentTools, CSA_TOOL_NAMES, type CsaToolContext, type CsaToolCaptured } from './agentTools.js';
 import { logger } from './logger.js';
 import { getResolvedConfig, DEFAULT_BASE_PROMPT, getGeminiConfig } from './llmConfig.js';
-import { callAgentGemini, geminiConfigured } from './geminiAgent.js';
+import { callAgentGemini, geminiConfigured, knowledgeFallback } from './geminiAgent.js';
 import { callOpenAiCompatible, callAnthropic } from './llmProviders.js';
+import { recordLlmCall } from './llmMetrics.js';
 
 /* ============================ 模型与模式常量 ============================ */
 
@@ -100,6 +101,7 @@ export async function confirmSdk(): Promise<void> {
       model: 'auto',
       session: probeSession,
       timeoutMs: 12000,
+      channel: 'probe',
     });
     if (r.text && r.text.trim()) {
       logger.info(`[SDK] 真实生成探测成功（${Date.now() - t0}ms），LLM 模式可用`);
@@ -208,12 +210,16 @@ export interface CallAgentOptions {
   historyText?: string;
   /** 显式协议覆盖（缺省取配置 provider）；用于测试或跨协议调用 */
   provider?: string;
+  /** 调用渠道（web/embed/im/email/probe/system），仅用于调用监控埋点 */
+  channel?: string;
 }
 
 export interface CallAgentResult {
   text: string;
   usedModel: string;
   captured?: CsaToolCaptured;
+  /** 模型自报 token 用量（部分引擎不返回，缺省 undefined） */
+  usage?: { promptTokens?: number; completionTokens?: number };
 }
 
 /** 把「配置透传参数被 CLI 拒绝」的典型报错归为一类，用于触发自动降级重试 */
@@ -247,27 +253,8 @@ export function buildHistoryText(
  * - apiKey / endpoint：经 env / endpoint 透传（best-effort，取决于部署形态）；
  * - maxReplyLength：应用层硬截断（双保险于系统提示词约束），并保护转人工标记不被截断。
  */
-export async function callAgent(opts: CallAgentOptions): Promise<CallAgentResult> {
-  // Hack2skill（AI-Builder-Cup 改装方案 §4/§5）：多协议路由——
-  // 管理员在「模型配置」选择的 provider 决定直连引擎；auto 沿用既有 SDK / Gemini 默认路径。
-  const prompt = opts.historyText ? `${opts.historyText}\n\n【用户当前消息】\n${opts.prompt}` : opts.prompt;
+async function callAgentSdk(opts: CallAgentOptions): Promise<CallAgentResult> {
   const cfg = getResolvedConfig();
-  const provider = (opts.provider || cfg.provider || 'auto');
-  const effectiveModel = opts.model || cfg.model;
-
-  // 显式协议直连（OpenAI 兼容 / Anthropic）：原生 fetch 调用，与 SDK / Gemini 同构
-  if (provider === 'openai') {
-    return callOpenAiCompatible({ ...opts, prompt, model: effectiveModel });
-  }
-  if (provider === 'anthropic') {
-    return callAnthropic({ ...opts, prompt, model: effectiveModel });
-  }
-
-  // gemini 协议（DB 驱动）或 env 驱动（GEMINI_API_KEY / GOOGLE_APPLICATION_CREDENTIALS / AGENT_PROVIDER=gemini）
-  if (provider === 'gemini' || geminiConfigured()) {
-    return callAgentGemini({ ...opts, prompt });
-  }
-
   const bundle = opts.toolCtx ? createCsaAgentTools(opts.toolCtx) : null;
 
   // 配置透传参数（best-effort）：仅在确有非空值时附加，避免无谓改动 CLI 启动参数
@@ -278,10 +265,10 @@ export async function callAgent(opts: CallAgentOptions): Promise<CallAgentResult
 
   const runWith = async (extras: Record<string, unknown>): Promise<CallAgentResult> => {
     const stream = query({
-      prompt,
+      prompt: opts.prompt,
       options: {
         cwd: process.cwd(),
-        model: effectiveModel,
+        model: opts.model,
         maxTurns: bundle ? 4 : 1,
         systemPrompt: opts.systemPrompt,
         permissionMode: 'default',
@@ -330,7 +317,7 @@ export async function callAgent(opts: CallAgentOptions): Promise<CallAgentResult
     if (limit > 0 && text.length > limit && !text.includes(HANDOFF_TOKEN)) {
       text = text.slice(0, limit) + '…';
     }
-    return { text, usedModel: effectiveModel, captured: bundle?.captured };
+    return { text, usedModel: opts.model, captured: bundle?.captured };
   };
 
   try {
@@ -344,4 +331,92 @@ export async function callAgent(opts: CallAgentOptions): Promise<CallAgentResult
     }
     throw e;
   }
+}
+
+/**
+ * Agent 统一调用入口：按协议路由 + 引擎回退链 + 调用监控埋点。
+ *
+ * 路由（provider 由调用方显式传入或取「模型配置」保存值）：
+ * - openai / anthropic：原生 fetch 直连（llmProviders），失败进入引擎回退链；
+ * - gemini（DB 驱动）或 env 驱动（GEMINI_API_KEY / GOOGLE_APPLICATION_CREDENTIALS）：
+ *   走 callAgentGemini；
+ * - auto：CodeBuddy Agent SDK 路径（callAgentSdk）。
+ *
+ * 引擎回退链（仅显式协议直连失败时触发，按序尝试，全部失败才降级知识库直答）：
+ *   ① Gemini env 已配置 → callAgentGemini；② SDK 可用 → callAgentSdk；③ knowledgeFallback。
+ *   避免「自定义端点一挂就直接掉知识库」的体验断崖。
+ */
+export async function callAgent(opts: CallAgentOptions): Promise<CallAgentResult> {
+  const prompt = opts.historyText ? `${opts.historyText}\n\n【用户当前消息】\n${opts.prompt}` : opts.prompt;
+  const cfg = getResolvedConfig();
+  const provider = opts.provider || cfg.provider || 'auto';
+  const effectiveModel = opts.model || cfg.model;
+  const channel = opts.channel || opts.toolCtx?.channel || 'system';
+  const runOpts: CallAgentOptions = { ...opts, prompt, model: effectiveModel };
+
+  // 可观测性埋点：每次调用记录引擎/模型/渠道/延迟/状态/token 用量（best-effort）
+  const withMetrics = async (fn: () => Promise<CallAgentResult>): Promise<CallAgentResult> => {
+    const t0 = Date.now();
+    try {
+      const r = await fn();
+      recordLlmCall({
+        provider: r.usedModel.split(':')[0] || provider,
+        model: r.usedModel,
+        channel,
+        sessionId: opts.session.id,
+        status: r.usedModel === 'knowledge_base' ? 'degraded' : 'ok',
+        latencyMs: Date.now() - t0,
+        promptTokens: r.usage?.promptTokens,
+        completionTokens: r.usage?.completionTokens,
+      });
+      return r;
+    } catch (e: any) {
+      recordLlmCall({
+        provider,
+        model: effectiveModel,
+        channel,
+        sessionId: opts.session.id,
+        status: 'error',
+        latencyMs: Date.now() - t0,
+        error: String(e?.message || e).slice(0, 200),
+      });
+      throw e;
+    }
+  };
+
+  return withMetrics(async () => {
+    // 显式协议直连（OpenAI 兼容 / Anthropic）：原生 fetch 调用，与 SDK / Gemini 同构
+    if (provider === 'openai' || provider === 'anthropic') {
+      try {
+        return provider === 'openai'
+          ? await callOpenAiCompatible(runOpts, false)
+          : await callAnthropic(runOpts, false);
+      } catch (e: any) {
+        const reason = String(e?.message || e).slice(0, 120);
+        logger.warn(`[agentCore] ${provider} 直连失败（${reason}），进入引擎回退链`);
+        if (geminiConfigured()) {
+          try {
+            return await callAgentGemini(runOpts);
+          } catch (ge: any) {
+            logger.warn(`[agentCore] 回退 Gemini 失败（${String(ge?.message || ge).slice(0, 100)}），继续回退`);
+          }
+        }
+        if (AGENT_MODE !== 'local' && !sdkBroken && isSdkAvailable() === true) {
+          try {
+            return await callAgentSdk(runOpts);
+          } catch (se: any) {
+            logger.warn(`[agentCore] 回退 SDK 失败（${String(se?.message || se).slice(0, 100)}），降级知识库直答`);
+          }
+        }
+        return knowledgeFallback(runOpts, `${provider} 直连失败且回退链耗尽：${reason}`);
+      }
+    }
+
+    // gemini 协议（DB 驱动）或 env 驱动
+    if (provider === 'gemini' || geminiConfigured()) {
+      return callAgentGemini(runOpts);
+    }
+
+    return callAgentSdk(runOpts);
+  });
 }

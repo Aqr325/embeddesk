@@ -88,6 +88,7 @@ import {
   badModels,
   buildHistoryText,
 } from './agentCore.js';
+import { getLlmMetrics } from './llmMetrics.js';
 import { submitSurvey, getSurveyMeta, dispatchSurvey } from './csat.js';
 
 const app = express();
@@ -477,11 +478,14 @@ async function runChatPipeline(
     }
 
     /* ---- ⑤ Agent 生成（带模型兜底） ---- */
-    // Hack2skill（方案 §4 契约1）：Gemini 引擎就绪时不受 tencent SDK 可用性约束
-    const useSdk = geminiConfigured() || ((await probeSdk()) && !isSdkBroken());
+    // 引擎就绪判定（任一满足即进 Agent 段）：
+    //   ① Gemini env 已配置；② 「模型配置」选了显式协议（openai/anthropic/gemini，管理员自有端点，
+    //      不依赖平台 SDK）；③ 平台 CodeBuddy SDK 可用。
+    const llmCfg = getResolvedConfig();
+    const explicitProtocol = llmCfg.provider !== 'auto';
+    const useAgent = geminiConfigured() || explicitProtocol || ((await probeSdk()) && !isSdkBroken());
     const knowledgeContext = buildRagContext(faqHits);
     const customerProfileText = session.customer_id ? formatCustomerProfile(db.getCustomerProfile(session.customer_id)) : null;
-    const llmCfg = getResolvedConfig();
     // 多轮上下文：取既有历史（排除刚写入的当前用户消息）拼到 prompt 前；新消息本身已是 prompt
     const historyText = buildHistoryText(
       history.slice(0, -1).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
@@ -491,13 +495,17 @@ async function runChatPipeline(
       maxReplyLength: llmCfg.maxReplyLength,
     });
 
-    if (useSdk) {
-      const requestedModel = model || session.model || llmCfg.model;
+    if (useAgent) {
       // 尝试顺序：请求模型 → 配置模型 → 已知可用模型；过滤已确认不可用的。
-      // Gemini 引擎例外：模型由 getGeminiConfig()（GEMINI_MODEL env 覆盖）决定，单次调用不进 tencent 候选链。
-      const MODEL_TRY_ORDER = geminiConfigured()
+      // 例外① Gemini env 驱动：模型由 getGeminiConfig()（GEMINI_MODEL env 覆盖）决定；
+      // 例外② 显式协议（openai/anthropic/gemini）：模型由「模型配置」的管理员填写值决定——
+      //   均单次调用，不进 tencent SDK 候选链（'auto'/'glm-*' 等对第三方端点无意义）。
+      const requestedModel = model || session.model || llmCfg.model;
+      const MODEL_TRY_ORDER = geminiConfigured() && !explicitProtocol
         ? [process.env.GEMINI_MODEL || 'gemini-2.5-flash']
-        : Array.from(new Set([requestedModel, llmCfg.model, ...KNOWN_SUPPORTED_MODELS])).filter((m) => !badModels.has(m));
+        : explicitProtocol
+          ? [llmCfg.model]
+          : Array.from(new Set([requestedModel, llmCfg.model, ...KNOWN_SUPPORTED_MODELS])).filter((m) => !badModels.has(m));
       let full = '';
       let usedModel = '';
       let agentError: unknown = null;
@@ -515,6 +523,7 @@ async function runChatPipeline(
             session,
             timeoutMs: perTimeout,
             historyText: historyText ?? undefined,
+            channel: session.channel, // 调用监控埋点（web/embed）
             // web 渠道开放只读工具（知识/订单/画像），建单仍走 HANDOFF_TOKEN 机制
             toolCtx: {
               channel: session.channel,
@@ -940,6 +949,7 @@ app.post('/api/admin/llm-config/test', requireAuth, requireRole('admin', 'manage
         model: cfg.model,
         session: probeSession,
         timeoutMs: 15000,
+        channel: 'test',
       });
       if (r.text && r.text.trim()) {
         res.json({ ok: true, usedModel: r.usedModel, latencyMs: Date.now() - t0, reply: r.text.trim().slice(0, 60) });
@@ -975,6 +985,16 @@ app.post('/api/admin/llm-config/discover', requireAuth, requireRole('admin', 'ma
   } else {
     res.json({ ok: false, error: result.error });
   }
+}));
+
+/**
+ * 模型调用监控：聚合最近 N 天调用日志（汇总 / 引擎明细 / 按天趋势 / 最近调用）。
+ * 数据来自 llm_call_logs（DB v19，agentCore 出口统一埋点）。
+ */
+app.get('/api/admin/llm-metrics', requireAuth, asyncHandler(async (req, res) => {
+  const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
+  const metrics = await getLlmMetrics(days, 50);
+  res.json(metrics);
 }));
 
 /* ============================ 管理员鉴权 ============================ */

@@ -171,6 +171,12 @@ function generateContentUrl(model: string): string {
   return `${base}/projects/${project}/locations/${loc}/publishers/google/models/${model}:generateContent`;
 }
 
+/** 从 usageMetadata 提取有限数字（否则 undefined） */
+function numOrUndef(v: unknown): number | undefined {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 /* ============================ 工具参数校验（自修复） ============================ */
 
 /** 校验模型给出的工具参数；返回 null 表示通过，否则返回给模型自修复的错误描述 */
@@ -276,7 +282,15 @@ export async function callAgentGemini(opts: CallAgentOptions): Promise<CallAgent
         if (limit > 0 && final.length > limit && !final.includes(HANDOFF_TOKEN)) {
           final = final.slice(0, limit) + '…';
         }
-        return { text: final, usedModel: `gemini:${model}`, captured: bundle?.captured };
+        return {
+          text: final,
+          usedModel: `gemini:${model}`,
+          captured: bundle?.captured,
+          usage: {
+            promptTokens: numOrUndef(j?.usageMetadata?.promptTokenCount),
+            completionTokens: numOrUndef(j?.usageMetadata?.candidatesTokenCount),
+          },
+        };
       }
 
       // 有工具调用：模型回合入列，逐个执行并把 functionResponse 回灌

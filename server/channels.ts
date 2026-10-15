@@ -379,6 +379,7 @@ export async function ingestExternalMessage(input: IngestInput): Promise<IngestR
           session,
           timeoutMs: AGENT_FIRST_TOKEN_TIMEOUT,
           historyText: historyText ?? undefined,
+          channel: input.channel, // 调用监控埋点（im/email）
           toolCtx: {
             channel: input.channel,
             sessionId: session.id,

@@ -252,6 +252,60 @@ export interface DiscoverResult {
   error?: string;
 }
 
+/* ---------- 模型调用监控（llm_call_logs 聚合） ---------- */
+
+export interface LlmMetricsSummary {
+  totalCalls: number;
+  okCount: number;
+  degradedCount: number;
+  errorCount: number;
+  successRate: number;
+  avgLatencyMs: number;
+  maxLatencyMs: number;
+  fallbackRate: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  sinceDays: number;
+}
+
+export interface LlmEngineStat {
+  provider: string;
+  calls: number;
+  okCount: number;
+  degradedCount: number;
+  errorCount: number;
+  avgLatencyMs: number;
+  totalTokens: number;
+  lastUsedAt: string | null;
+}
+
+export interface LlmTrendPoint {
+  date: string;
+  calls: number;
+  degraded: number;
+  error: number;
+}
+
+export interface LlmRecentCall {
+  id: number;
+  time: string;
+  provider: string;
+  model: string;
+  channel: string | null;
+  status: string;
+  latencyMs: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  error: string | null;
+}
+
+export interface LlmMetrics {
+  summary: LlmMetricsSummary;
+  byEngine: LlmEngineStat[];
+  trend: LlmTrendPoint[];
+  recent: LlmRecentCall[];
+}
+
 export interface Employee {
   id: string;
   username: string;
@@ -498,6 +552,9 @@ export const api = {
   /** 测试连接：可传「表单当前值」（未保存）做保存前验证；不传则用已保存配置 */
   testLlmConfig: (data?: { provider?: string; endpoint?: string; apiKey?: string; model?: string }) =>
     http<LlmConfigTestResult>('/admin/llm-config/test', { method: 'POST', body: JSON.stringify(data ?? {}) }),
+
+  /** 模型调用监控：聚合调用日志（汇总 / 引擎明细 / 趋势 / 最近调用） */
+  getLlmMetrics: (days = 7) => http<LlmMetrics>(`/admin/llm-metrics?days=${days}`),
 
   /* ---------- 知识盲区自学习（企业知识助手） ---------- */
   getKnowledgeGaps: (status = 'pending') =>

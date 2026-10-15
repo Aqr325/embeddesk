@@ -526,6 +526,31 @@ const migrations: Migration[] = [
       ensureColumn('llm_config', 'max_output_tokens', 'max_output_tokens INTEGER');
     },
   },
+  {
+    // 模型调用可观测性：全渠道 LLM 调用日志（provider/model/channel/延迟/token/状态）。
+    // status：ok=正常生成；degraded=降级知识库直答；error=调用失败。
+    version: 19,
+    name: 'LLM 调用日志：llm_call_logs（可观测性）',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS llm_call_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          provider TEXT NOT NULL,
+          model TEXT NOT NULL,
+          channel TEXT,
+          session_id TEXT,
+          status TEXT NOT NULL,
+          latency_ms INTEGER NOT NULL DEFAULT 0,
+          prompt_tokens INTEGER,
+          completion_tokens INTEGER,
+          error TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_lcl_created ON llm_call_logs(created_at);
+        CREATE INDEX IF NOT EXISTS idx_lcl_provider ON llm_call_logs(provider, created_at);
+      `);
+    },
+  },
 ];
 
 /** 按 user_version 顺序应用未执行的迁移，保证 schema 演进可追踪、幂等、可重放 */
@@ -1705,6 +1730,90 @@ export function saveLlmConfig(patch: Partial<Omit<DbLlmConfig, 'updatedAt'>>): D
     next.updatedAt,
   );
   return next;
+}
+
+/* ============================ LLM 调用日志（可观测性，DB v19） ============================ */
+
+export interface DbLlmCallLog {
+  provider: string;
+  model: string;
+  channel: string | null;
+  sessionId: string | null;
+  status: string; // ok | degraded | error
+  latencyMs: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  error: string | null;
+}
+
+/** 调用日志滚动保留上限（超出即清理最旧记录） */
+const LLM_CALL_LOG_KEEP = 5000;
+
+/** 写入一条 LLM 调用日志（best-effort：失败仅告警不中断主链路） */
+export function insertLlmCallLog(entry: DbLlmCallLog): void {
+  try {
+    db.prepare(
+      `INSERT INTO llm_call_logs (provider, model, channel, session_id, status, latency_ms, prompt_tokens, completion_tokens, error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      entry.provider,
+      entry.model,
+      entry.channel,
+      entry.sessionId,
+      entry.status,
+      Math.max(0, Math.round(entry.latencyMs)),
+      entry.promptTokens,
+      entry.completionTokens,
+      entry.error ? entry.error.slice(0, 300) : null,
+      new Date().toISOString(),
+    );
+  } catch (e: any) {
+    logger.warn('[llm_call_logs] 写入失败（已忽略）:', e?.message || e);
+  }
+}
+
+/** 滚动清理：仅保留最近 LLM_CALL_LOG_KEEP 条 */
+export function cleanupLlmCallLogs(): void {
+  try {
+    db.prepare(
+      `DELETE FROM llm_call_logs WHERE id NOT IN (
+         SELECT id FROM llm_call_logs ORDER BY id DESC LIMIT ?
+       )`,
+    ).run(LLM_CALL_LOG_KEEP);
+  } catch (e: any) {
+    logger.warn('[llm_call_logs] 清理失败（已忽略）:', e?.message || e);
+  }
+}
+
+/** 查询最近 N 天的调用日志（按时间正序），供指标聚合 */
+export function queryLlmCallLogs(days = 7): unknown[] {
+  try {
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    return db
+      .prepare(
+        `SELECT id, provider, model, channel, status, latency_ms, prompt_tokens, completion_tokens, error, created_at
+         FROM llm_call_logs WHERE created_at >= ? ORDER BY created_at ASC`,
+      )
+      .all(since) as unknown[];
+  } catch (e: any) {
+    logger.warn('[llm_call_logs] 查询失败（已忽略）:', e?.message || e);
+    return [];
+  }
+}
+
+/** 查询最近 limit 条调用日志（按时间倒序） */
+export function queryRecentLlmCallLogs(limit = 50): unknown[] {
+  try {
+    return db
+      .prepare(
+        `SELECT id, provider, model, channel, status, latency_ms, prompt_tokens, completion_tokens, error, created_at
+         FROM llm_call_logs ORDER BY id DESC LIMIT ?`,
+      )
+      .all(limit) as unknown[];
+  } catch (e: any) {
+    logger.warn('[llm_call_logs] 查询失败（已忽略）:', e?.message || e);
+    return [];
+  }
 }
 
 /**
