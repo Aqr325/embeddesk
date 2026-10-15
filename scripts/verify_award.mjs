@@ -339,6 +339,30 @@ async function main() {
     logCase(false, 'SQLite 直连核验', `→ ${e?.message || e}`);
   }
 
+  /* ---------- G 语音交互（前端静态接线核验） ---------- */
+  console.log('');
+  console.log('── G 语音交互（voice，零依赖 Web Speech API） ──');
+  const FE = {
+    useVoice: path.resolve(ROOT, 'src/hooks/useVoice.ts'),
+    chatInput: path.resolve(ROOT, 'src/components/ChatInput.tsx'),
+    bubble: path.resolve(ROOT, 'src/components/MessageBubble.tsx'),
+    customer: path.resolve(ROOT, 'src/pages/CustomerPage.tsx'),
+  };
+  const readSrc = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
+  const uv = readSrc(FE.useVoice);
+  logCase(uv.length > 0 && uv.includes('export function useVoice'), 'useVoice.ts 存在并导出 useVoice', '→ ' + uv.length + ' 字节');
+  const VOICE_CONTRACT = ['speechSupported', 'ttsSupported', 'listening', 'interim', 'startListening', 'stopListening', 'autoSpeak', 'setAutoSpeak', 'speakingId', 'speak', 'stopSpeaking'];
+  logCase(VOICE_CONTRACT.every((k) => uv.includes(k)), 'useVoice 契约完整（输入/播报/状态全字段）', '→ 缺：' + (VOICE_CONTRACT.filter((k) => !uv.includes(k)).join(',') || '无'));
+  logCase(uv.includes('typeof window') && uv.includes('SpeechRecognition'), '语音能力探测失败静默降级（window 守卫 + Web Speech 探测）', '');
+  const ci = readSrc(FE.chatInput);
+  logCase(ci.includes('UseVoiceResult') && (ci.includes('Mic') || ci.includes('MicOff')) && (ci.includes('Volume2') || ci.includes('VolumeX')), 'ChatInput 接入语音（麦克风按钮 + 自动播报开关）', '');
+  logCase(ci.includes('speechSupported') && ci.includes('autoSpeak'), 'ChatInput 按能力门控渲染（不支持即隐藏入口）', '');
+  const mb = readSrc(FE.bubble);
+  logCase(mb.includes('ttsSupported') && mb.includes('speak(') && mb.includes('朗读'), 'MessageBubble 提供「朗读」按钮（播报门控）', '');
+  const cp = readSrc(FE.customer);
+  logCase(cp.includes('useVoice(') && cp.includes('onFinal') && cp.includes('send('), 'CustomerPage 启用语音：识别结束即发送（说一句→问一句）', '');
+  logCase(cp.includes('autoSpeak') && cp.includes('voice.speak'), 'CustomerPage 开启自动播报时朗读最新回复', '');
+
   srv.kill();
   dumpServerIfDead();
   console.log(`\n=== 汇总：${pass} 通过 / ${fail} 失败（共 ${pass + fail} 断言） ===`);
@@ -347,7 +371,7 @@ async function main() {
     failures.forEach((f) => console.log('  ' + f));
     process.exit(1);
   }
-  console.log('✅ 获奖级四大增强验收全部通过');
+  console.log('✅ 获奖级验收全部通过（含语音交互 G）');
   process.exit(0);
 }
 
