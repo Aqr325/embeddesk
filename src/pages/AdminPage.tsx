@@ -29,6 +29,7 @@ import {
   Radio,
   HeartPulse,
   Microscope,
+  Gauge,
 } from 'lucide-react';
 import { useAdmin } from '../hooks/useAdmin';
 import { useAuth } from '../hooks/useAuth';
@@ -52,7 +53,7 @@ import { DeviceHealthPanel } from '../components/DeviceHealthPanel';
 import { RootCausePanel } from '../components/RootCausePanel';
 import { Skeleton } from '../components/ui/Skeleton';
 
-type Tab = 'conversations' | 'tickets' | 'faqs' | 'gaps' | 'workflow' | 'insights' | 'employees' | 'data' | 'channels' | 'ai' | 'impact' | 'telemetry' | 'health' | 'rootcause';
+type Tab = 'overview' | 'conversations' | 'tickets' | 'faqs' | 'gaps' | 'workflow' | 'insights' | 'employees' | 'data' | 'channels' | 'ai' | 'impact' | 'telemetry' | 'health' | 'rootcause' | 'datamgmt' | 'runtime' | 'csat';
 
 function formatBytes(n: number): string {
   if (!n) return '0 B';
@@ -114,35 +115,56 @@ function AdminSkeleton() {
 export function AdminPage() {
   const admin = useAdmin();
   const { hasRole, username } = useAuth();
-  const [tab, setTab] = useState<Tab>('conversations');
+  const [tab, setTab] = useState<Tab>('overview');
   const [exporting, setExporting] = useState(false);
   const [mineOnly, setMineOnly] = useState(false);
 
   const canManage = hasRole('admin', 'manager');
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode; count?: number }[] = [
-    {
-      id: 'conversations',
-      label: '对话记录',
-      icon: <MessagesSquare size={15} />,
-      count: admin.pagination.total || admin.conversations.length,
-    },
-    { id: 'tickets', label: '工单', icon: <Headset size={15} />, count: admin.tickets.length },
-    { id: 'faqs', label: '知识库', icon: <BookOpen size={15} />, count: admin.faqs.length },
-    { id: 'insights', label: '洞察', icon: <TrendingUp size={15} />, count: admin.insights?.totals.questions },
-  ];
-  if (canManage) {
-    tabs.push({ id: 'employees', label: '员工管理', icon: <Users size={15} />, count: admin.employees.length });
-    tabs.push({ id: 'data', label: '数据导入', icon: <FileUp size={15} /> });
-    tabs.push({ id: 'gaps', label: '知识盲区', icon: <Lightbulb size={15} /> });
-    tabs.push({ id: 'workflow', label: '工作流', icon: <Workflow size={15} /> });
-    tabs.push({ id: 'channels', label: '渠道接入', icon: <Globe size={15} />, count: admin.sites.length });
-    tabs.push({ id: 'ai', label: '模型配置', icon: <Bot size={15} /> });
-    tabs.push({ id: 'impact', label: 'AI 成效', icon: <BarChart3 size={15} /> });
-    tabs.push({ id: 'telemetry', label: '设备遥测', icon: <Radio size={15} /> });
-    tabs.push({ id: 'health', label: '设备健康', icon: <HeartPulse size={15} /> });
-    tabs.push({ id: 'rootcause', label: '根因洞察', icon: <Microscope size={15} /> });
+  interface NavItem {
+    id: Tab;
+    label: string;
+    icon: React.ReactNode;
+    count?: number;
   }
+  interface NavSection {
+    title: string;
+    items: NavItem[];
+  }
+
+  const coreItems: NavItem[] = [
+    { id: 'overview', label: '总控', icon: <Gauge size={18} /> },
+    { id: 'conversations', label: '对话记录', icon: <MessagesSquare size={18} />, count: admin.pagination.total || admin.conversations.length },
+    { id: 'tickets', label: '工单', icon: <Headset size={18} />, count: admin.tickets.length },
+    { id: 'faqs', label: '知识库', icon: <BookOpen size={18} />, count: admin.faqs.length },
+    { id: 'insights', label: '洞察', icon: <TrendingUp size={18} />, count: admin.insights?.totals.questions },
+    { id: 'csat', label: '客户满意度', icon: <Smile size={18} /> },
+  ];
+  const aiItems: NavItem[] = [
+    { id: 'impact', label: 'AI 成效', icon: <BarChart3 size={18} /> },
+    { id: 'telemetry', label: '设备遥测', icon: <Radio size={18} /> },
+    { id: 'health', label: '设备健康', icon: <HeartPulse size={18} /> },
+    { id: 'rootcause', label: '根因洞察', icon: <Microscope size={18} /> },
+    { id: 'ai', label: '模型配置', icon: <Bot size={18} /> },
+  ];
+  const systemItems: NavItem[] = [
+    { id: 'gaps', label: '知识盲区', icon: <Lightbulb size={18} /> },
+    { id: 'workflow', label: '工作流', icon: <Workflow size={18} /> },
+    { id: 'channels', label: '渠道接入', icon: <Globe size={18} />, count: admin.sites.length },
+    { id: 'employees', label: '员工管理', icon: <Users size={18} />, count: admin.employees.length },
+    { id: 'data', label: '数据导入', icon: <FileUp size={18} /> },
+    { id: 'datamgmt', label: '数据管理', icon: <Database size={18} /> },
+    { id: 'runtime', label: '运行统计', icon: <Activity size={18} /> },
+  ];
+
+  const sections: NavSection[] = [
+    { title: '核心运营', items: coreItems },
+    ...(canManage ? [{ title: 'AI 能力', items: aiItems }, { title: '系统', items: systemItems }] : []),
+  ];
+
+  const allItems = [...coreItems, ...aiItems, ...systemItems];
+  const currentNav = allItems.find((t) => t.id === tab);
+  const currentLabel = currentNav?.label ?? '管理后台';
 
   const visibleTickets = mineOnly && username ? admin.tickets.filter((t) => t.assignee === username) : admin.tickets;
 
@@ -207,19 +229,52 @@ export function AdminPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto overscroll-contain">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-5 sm:space-y-6">
-        {/* 页头 */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-accent text-accent-foreground flex items-center justify-center shrink-0">
-              <LayoutDashboard size={20} />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-lg font-semibold truncate">管理后台</h1>
-              <p className="text-xs text-muted-foreground">对话记录 · 满意度统计 · 工单与知识库</p>
-            </div>
+    <div className="flex h-full overflow-hidden overscroll-contain">
+      <aside className="w-16 lg:w-60 shrink-0 h-full border-r border-border bg-card/50 flex flex-col">
+        <div className="h-14 flex items-center gap-2 px-4 border-b border-border shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-accent text-accent-foreground flex items-center justify-center shrink-0">
+            <LayoutDashboard size={18} />
           </div>
+          <span className="font-semibold truncate hidden lg:block">管理后台</span>
+        </div>
+        <nav className="flex-1 overflow-y-auto p-2 space-y-4">
+          {sections.map((section) => (
+            <div key={section.title} className="space-y-1">
+              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 hidden lg:block">
+                {section.title}
+              </div>
+              {section.items.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setTab(item.id)}
+                  className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-base min-h-[44px] ${
+                    tab === item.id
+                      ? 'bg-accent/10 text-accent'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                  title={item.label}
+                >
+                  <span className="shrink-0">{item.icon}</span>
+                  <span className="hidden lg:inline truncate flex-1 text-left">{item.label}</span>
+                  {item.count != null && (
+                    <span className="hidden lg:inline text-[11px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                      {item.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+      </aside>
+      <main className="flex-1 h-full overflow-y-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-5 sm:space-y-6">
+          {/* 页头 */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold truncate">{currentLabel}</h1>
+              <p className="text-xs text-muted-foreground">智能客服运营中心 · 中科佳晨</p>
+            </div>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <button
               onClick={handleExport}
@@ -260,6 +315,9 @@ export function AdminPage() {
           <AdminSkeleton />
         ) : (
           <>
+            {/* 总控首页：统计卡片 + 图表 + 运营看板 */}
+            {tab === 'overview' && (
+            <>
             {/* 统计卡片 */}
             {admin.stats && <StatCards stats={admin.stats} />}
 
@@ -308,29 +366,8 @@ export function AdminPage() {
                 </div>
               </div>
             )}
-
-            {/* Tab 切换 */}
-            <div className="flex items-center gap-1 border-b border-border overflow-x-auto">
-              {tabs.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
-                  className={`inline-flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-base whitespace-nowrap max-sm:min-h-[44px] ${
-                    tab === t.id
-                      ? 'border-accent text-accent'
-                      : 'border-transparent text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {t.icon}
-                  {t.label}
-                  {t.count != null && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-                      {t.count}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
+            </>
+            )}
 
             {/* Tab 内容 */}
             <div key={tab} className="animate-fade-in">
@@ -491,6 +528,7 @@ export function AdminPage() {
             </div>
 
             {/* 数据管理 */}
+            {tab === 'datamgmt' && (
             <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 animate-fade-in">
               <div className="flex items-center gap-2 mb-4">
                 <Database size={16} className="text-accent" />
@@ -571,12 +609,14 @@ export function AdminPage() {
                 </div>
               )}
             </div>
+            )}
 
-            {/* 运行概览（实时指标，每 15s 自动刷新） */}
+            {/* 运行统计 */}
+            {tab === 'runtime' && (
             <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 animate-fade-in">
               <div className="flex items-center gap-2 mb-4">
                 <Activity size={16} className="text-accent" />
-                <h3 className="text-sm font-medium">运行概览</h3>
+                <h3 className="text-sm font-medium">运行统计</h3>
                 <span className="text-xs text-muted-foreground">实时指标 · 15s 自动刷新</span>
                 <button
                   onClick={() => admin.exportPrometheus()}
@@ -688,8 +728,10 @@ export function AdminPage() {
                 <p className="text-sm text-muted-foreground">指标加载中…</p>
               )}
             </div>
+            )}
 
             {/* 客户满意度（CSAT）看板 */}
+            {tab === 'csat' && (
             <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 animate-fade-in">
               <div className="flex items-center gap-2 mb-4">
                 <Smile size={16} className="text-accent" />
@@ -819,9 +861,11 @@ export function AdminPage() {
                 <p className="text-sm text-muted-foreground">满意度数据加载中…</p>
               )}
             </div>
+            )}
           </>
         )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
