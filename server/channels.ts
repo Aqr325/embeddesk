@@ -198,7 +198,7 @@ async function openIngestTicket(opts: {
       reason: esc.decision.reason || '智能升级',
       channel: opts.session.channel,
       customer: opts.session.customer_name,
-    });
+    }).catch((e) => logger.warn(`[escalation] 通知发送异常（已忽略）: ${(e as Error)?.message || e}`));
   }
   return { ticketId, assignee, queuePosition, priority: finalPriority };
 }

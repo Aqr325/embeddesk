@@ -209,7 +209,8 @@ export async function executeCopilotAction(opts: {
     channel: session.channel,
   });
   if (esc.decision.notify) {
-    void notifyEscalation({ ticketId, priority: pr, reason: esc.decision.reason || reason, channel: session.channel, customer: session.customer_name });
+    void notifyEscalation({ ticketId, priority: pr, reason: esc.decision.reason || reason, channel: session.channel, customer: session.customer_name })
+      .catch((e) => logger.warn(`[escalation] 通知发送异常（已忽略）: ${(e as Error)?.message || e}`));
   }
   db.updateSession(session.id, { status: 'waiting_human', handoff: 1, handoff_reason: reason });
   logger.info(`[copilot] 坐席一键${opts.action === 'escalate' ? '升级' : '建单'} ${ticketId.slice(0, 8)} priority=${pr} assignee=${assign.assignee}`);

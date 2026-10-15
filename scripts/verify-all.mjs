@@ -4,13 +4,15 @@
  *
  * 一条命令跑完全部验证闭环，输出汇总表：
  *   ① 起本地 mock GCP（mock-vertex.mjs：Gemini / Vertex Search / Firestore / BigQuery / Document AI）
- *   ② 依次运行 6 个验收脚本（tsx）：
+ *   ② 依次运行 7 个验收脚本（tsx）：
  *      - verify_insights     洞察聚合（纯本地 JSONL，12 断言）
  *      - verify_agent_tools  领域工具层（search_knowledge / query_order / create_ticket 防重）
  *      - verify_gemini_agent Gemini 内核 T1–T9（function calling / 降级 / 检索映射 / 路由开关）
  *      - verify_store        Firestore 优先 + SQLite 兜底（PATCH 双写 / 不可达回退）
  *      - verify_events       BigQuery 事件流优先 + JSONL 兜底
  *      - verify_queries      真实 catalog 28 query 检索 Top3 命中率（≥80% 验收线）
+ *      - verify_http         HTTP 全端点契约冒烟（40+ API，自起服务）
+ *      - verify_award        获奖级四大增强（编排中枢/成效看板/主动关怀/端侧遥测，自起服务）
  *   ③ 汇总通过/失败，退出码 0=全过 1=有失败
  *
  * 运行：npm run verify   （或 node scripts/verify-all.mjs）
@@ -128,6 +130,20 @@ const SUITES = [
       CSA_DB_PATH: 'data/verify_http.db',
       ADMIN_PASSWORD: 'smoke123',
       INGEST_SECRET: 'smoke-secret',
+      ALLOWED_ORIGINS: 'http://localhost:5173',
+      SEED_DEMO: '1',
+    },
+  },
+  {
+    name: 'verify_award',
+    title: '获奖级四大增强（编排中枢/成效看板/主动关怀/端侧遥测，自起服务）',
+    args: ['scripts/verify_award.mjs'],
+    env: {
+      // 同样自起 Express 服务；端口再 +10，与 verify_http 隔离；独立 db 保证 v15/v16 迁移基线干净
+      PORT: String(PORT + 110),
+      CSA_DB_PATH: 'data/verify_award.db',
+      ADMIN_PASSWORD: 'award123',
+      INGEST_SECRET: 'award-secret',
       ALLOWED_ORIGINS: 'http://localhost:5173',
       SEED_DEMO: '1',
     },

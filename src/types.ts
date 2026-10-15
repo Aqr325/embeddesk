@@ -420,6 +420,89 @@ export const STATUS_LABELS: Record<string, string> = {
   closed: '已结束',
 };
 
+/* ============================ 设备健康度（预测性维护）============================ */
+export type DeviceRiskLevel = 'healthy' | 'watch' | 'at_risk' | 'critical';
+export type HealthTrend = 'improving' | 'stable' | 'declining';
+
+export interface DeviceHealth {
+  deviceId: string;
+  product: string | null;
+  model: string | null;
+  /** 0-100，越高越健康 */
+  health: number;
+  riskLevel: DeviceRiskLevel;
+  trend: HealthTrend;
+  recentHealth: number;
+  reportCount: number;
+  anomalyCount: number;
+  lastAnomalyReason: string | null;
+  lastSeen: string | null;
+  hasOpenTicket: boolean;
+  recommendation: string;
+  urgency: 'none' | 'low' | 'medium' | 'high';
+}
+
+export interface DeviceHealthData {
+  source: 'db' | 'empty';
+  summary: {
+    totalDevices: number;
+    healthy: number;
+    watch: number;
+    atRisk: number;
+    critical: number;
+    avgHealth: number;
+    declining: number;
+  };
+  devices: DeviceHealth[];
+  generatedAt: string;
+}
+
+export const DEVICE_RISK_LABELS: Record<DeviceRiskLevel, string> = {
+  healthy: '健康',
+  watch: '观察',
+  at_risk: '风险',
+  critical: '危急',
+};
+
+export const HEALTH_TREND_LABELS: Record<HealthTrend, string> = {
+  improving: '改善中',
+  stable: '平稳',
+  declining: '恶化中',
+};
+
+/* ============================ 工单根因聚类（Root-Cause Mining）============================ */
+export type RootCauseKind = 'hardware_batch' | 'doc_gap' | 'service_flow' | 'other';
+
+export interface RootCauseCluster {
+  keyword: string;
+  count: number;
+  ratio: number;
+  kind: RootCauseKind;
+  kindLabel: string;
+  intents: Array<{ intent: string; count: number }>;
+  samples: Array<{ id: string; summary: string; createdAt: string }>;
+  suggestion: string;
+  inGapList: boolean;
+}
+
+export interface RootCauseData {
+  source: 'db' | 'empty';
+  windowDays: number;
+  totalTickets: number;
+  resolvedTickets: number;
+  clusters: RootCauseCluster[];
+  coOccurrences: Array<{ pair: [string, string]; count: number }>;
+  summary: string;
+  generatedAt: string;
+}
+
+export const ROOT_CAUSE_KIND_LABELS: Record<RootCauseKind, string> = {
+  hardware_batch: '硬件/批次',
+  doc_gap: '说明缺失',
+  service_flow: '服务流程',
+  other: '待归类',
+};
+
 export const PRIORITY_LABELS: Record<string, string> = {
   low: '低',
   medium: '普通',

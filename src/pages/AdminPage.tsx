@@ -27,6 +27,8 @@ import {
   Workflow,
   BarChart3,
   Radio,
+  HeartPulse,
+  Microscope,
 } from 'lucide-react';
 import { useAdmin } from '../hooks/useAdmin';
 import { useAuth } from '../hooks/useAuth';
@@ -46,9 +48,11 @@ import { KnowledgeGapPanel } from '../components/KnowledgeGapPanel';
 import { WorkflowRules } from '../components/WorkflowRules';
 import { ImpactDashboard } from '../components/ImpactDashboard';
 import { TelemetryPanel } from '../components/TelemetryPanel';
+import { DeviceHealthPanel } from '../components/DeviceHealthPanel';
+import { RootCausePanel } from '../components/RootCausePanel';
 import { Skeleton } from '../components/ui/Skeleton';
 
-type Tab = 'conversations' | 'tickets' | 'faqs' | 'gaps' | 'workflow' | 'insights' | 'employees' | 'data' | 'channels' | 'ai' | 'impact' | 'telemetry';
+type Tab = 'conversations' | 'tickets' | 'faqs' | 'gaps' | 'workflow' | 'insights' | 'employees' | 'data' | 'channels' | 'ai' | 'impact' | 'telemetry' | 'health' | 'rootcause';
 
 function formatBytes(n: number): string {
   if (!n) return '0 B';
@@ -136,6 +140,8 @@ export function AdminPage() {
     tabs.push({ id: 'ai', label: '模型配置', icon: <Bot size={15} /> });
     tabs.push({ id: 'impact', label: 'AI 成效', icon: <BarChart3 size={15} /> });
     tabs.push({ id: 'telemetry', label: '设备遥测', icon: <Radio size={15} /> });
+    tabs.push({ id: 'health', label: '设备健康', icon: <HeartPulse size={15} /> });
+    tabs.push({ id: 'rootcause', label: '根因洞察', icon: <Microscope size={15} /> });
   }
 
   const visibleTickets = mineOnly && username ? admin.tickets.filter((t) => t.assignee === username) : admin.tickets;
@@ -454,6 +460,32 @@ export function AdminPage() {
                   ) : (
                     <p className="text-sm text-muted-foreground">遥测数据加载中…</p>
                   )}
+                </div>
+              )}
+              {tab === 'health' && (
+                <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 animate-fade-in">
+                  <div className="flex items-center gap-2 mb-1">
+                    <HeartPulse size={16} className="text-accent" />
+                    <h3 className="text-sm font-medium">设备健康度看板</h3>
+                    <span className="text-xs text-muted-foreground">遥测聚合 → 健康分 / 趋势 / 维护建议（预测性维护）</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    把逐条异常上报聚合成每台设备的健康分，越近的异常权重越高；排序即售后作业队列，最需要关注的排最前。
+                  </p>
+                  <DeviceHealthPanel />
+                </div>
+              )}
+              {tab === 'rootcause' && (
+                <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 animate-fade-in">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Microscope size={16} className="text-accent" />
+                    <h3 className="text-sm font-medium">工单根因洞察</h3>
+                    <span className="text-xs text-muted-foreground">反复出现的根因 + 类型判定 + 可执行建议</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    从历史工单里挖出客户反复来找我们的真正原因，并判定该补知识库、该查批次还是该改流程。
+                  </p>
+                  <RootCausePanel />
                 </div>
               )}
             </div>

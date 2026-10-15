@@ -210,7 +210,7 @@ export function createCsaAgentTools(ctx: CsaToolContext): CsaToolBundle {
           reason: esc.decision.reason || '智能升级',
           channel: ctx.channel,
           customer: ctx.customerName,
-        });
+        }).catch((e) => logger.warn(`[escalation] 通知发送异常（已忽略）: ${(e as Error)?.message || e}`));
       }
       db.updateSession(ctx.sessionId, { status: 'waiting_human', handoff: 1, handoff_reason: String(reason) });
       captured.tickets.push({ ticketId, priority: pr, assignee: assign.assignee, queuePosition, reason: String(reason) });

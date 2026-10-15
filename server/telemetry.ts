@@ -99,9 +99,36 @@ export function ingestTelemetry(input: {
     priority = higherPriority(prBase, esc.decision.priority);
     const assign = assignTicket(intentResult.intent, {});
     ticketId = uuidv4();
+    // P0 修复（verify_award 套件实跑抓到）：tickets.session_id 存在指向 sessions 的外键约束，
+    // 而遥测建单用的是合成会话 id（`__telemetry__<deviceId>`），该行不存在时 db.createTicket 会
+    // 同步抛 SQLITE_CONSTRAINT_FOREIGNKEY；异常穿透 async persistTicket 后被 `void` 调用点吞成
+    // unhandled rejection，Node ≥15 默认行为直接杀掉整个服务进程——一台设备一次异常遥测即可打垮客服服务。
+    // 修法：建单前幂等确保「设备会话」行存在（设备即会话，后台可顺藤摸瓜定位到设备时间线）。
+    const telemetrySessionId = `__telemetry__${input.deviceId}`;
+    try {
+      if (!db.getSession(telemetrySessionId)) {
+        db.createSession({
+          id: telemetrySessionId,
+          title: `设备 ${input.deviceId} 遥测会话`,
+          model: 'telemetry',
+          customer_name: `设备 ${input.deviceId}`,
+          channel: 'im',
+          status: 'active',
+        });
+      }
+      // 留一条系统消息，坐席在会话详情里能看到这次异常上报的原文
+      db.createMessage({
+        id: uuidv4(),
+        session_id: telemetrySessionId,
+        role: 'system',
+        content: `[端侧遥测] ${message}`,
+      });
+    } catch (e) {
+      logger.warn(`[telemetry] 设备会话准备失败（仍尝试建单）: ${(e as Error)?.message || e}`);
+    }
     void persistTicket({
       id: ticketId,
-      session_id: `__telemetry__${input.deviceId}`,
+      session_id: telemetrySessionId,
       customer_name: `设备 ${input.deviceId}`,
       intent: intentResult.intent,
       reason: '端侧遥测异常自动建单',
@@ -116,9 +143,13 @@ export function ingestTelemetry(input: {
       sla_due_at: computeSlaDue(priority, new Date().toISOString()),
       channel: 'im',
       device_snapshot: JSON.stringify(input.snapshot),
+    }).catch((e) => {
+      // 兜底：建单失败绝不能演变为进程级 unhandled rejection（见上方 P0 注释）
+      logger.error(`[telemetry] 自动建单失败（已降级，不影响服务进程）: ${(e as Error)?.message || e}`);
     });
     if (esc.decision.notify) {
-      void notifyEscalation({ ticketId, priority, reason: message, channel: 'im', customer: input.deviceId });
+      void notifyEscalation({ ticketId, priority, reason: message, channel: 'im', customer: input.deviceId })
+        .catch((e) => logger.warn(`[escalation] 通知发送异常（已忽略）: ${(e as Error)?.message || e}`));
     }
     logger.info(`[telemetry] 设备 ${input.deviceId} 异常自动建单 ${ticketId.slice(0, 8)} priority=${priority}`);
   }

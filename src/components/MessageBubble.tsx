@@ -1,4 +1,4 @@
-import { Bot, User, Headset, AlertTriangle, Clock } from 'lucide-react';
+import { Bot, User, Headset, AlertTriangle, Clock, Volume2, Square } from 'lucide-react';
 import type { ChatMessage } from '../types';
 import { IntentBadge } from './IntentBadge';
 import { AnalysisPanel } from './AnalysisPanel';
@@ -9,6 +9,8 @@ interface Props {
   message: ChatMessage;
   rating?: { rating: number; tags: string[]; comment: string; resolved: boolean };
   onRate: (rating: number, tags: string[], comment: string, resolved: boolean) => void;
+  /** 语音播报能力（不支持时不渲染朗读按钮） */
+  voice?: { ttsSupported: boolean; speakingId: string | null; speak: (id: string | null, text: string) => void };
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -17,7 +19,7 @@ const SOURCE_LABEL: Record<string, string> = {
   handoff: '转人工处理',
 };
 
-export function MessageBubble({ message, rating, onRate }: Props) {
+export function MessageBubble({ message, rating, onRate, voice }: Props) {
   const isUser = message.role === 'user';
 
   // 转人工卡片
@@ -94,6 +96,20 @@ export function MessageBubble({ message, rating, onRate }: Props) {
                 <span className="inline-flex items-center gap-0.5">
                   <Clock size={10} /> {(message.latencyMs / 1000).toFixed(1)}s
                 </span>
+              )}
+              {/* 语音播报：点击朗读本条回复，再次点击停止 */}
+              {voice?.ttsSupported && (
+                <button
+                  onClick={() => voice.speak(message.id, message.content)}
+                  className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 transition-base hover:text-accent ${
+                    voice.speakingId === message.id ? 'text-accent' : ''
+                  }`}
+                  title={voice.speakingId === message.id ? '停止朗读' : '朗读这条回复'}
+                  aria-label={voice.speakingId === message.id ? '停止朗读' : '朗读这条回复'}
+                >
+                  {voice.speakingId === message.id ? <Square size={9} className="fill-current" /> : <Volume2 size={10} />}
+                  {voice.speakingId === message.id ? '停止' : '朗读'}
+                </button>
               )}
             </div>
           )}

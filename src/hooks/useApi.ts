@@ -18,6 +18,8 @@ import type {
   ImpactData,
   DeviceTelemetry,
   AgentRunRow,
+  DeviceHealthData,
+  RootCauseData,
 } from '../types';
 
 const BASE = '/api';
@@ -477,4 +479,10 @@ export const api = {
     http<{ runs: AgentRunRow[]; total: number }>(
       `/admin/agent-runs${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`,
     ),
+
+  /* ---------- 设备健康度看板（预测性维护） ---------- */
+  getDeviceHealth: () => http<DeviceHealthData>('/admin/device-health'),
+
+  /* ---------- 工单根因聚类洞察 ---------- */
+  getRootCauses: (windowDays = 30) => http<RootCauseData>(`/admin/root-causes?windowDays=${windowDays}`),
 };

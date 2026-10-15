@@ -45,6 +45,8 @@ import { escalateFromContext, higherPriority } from './escalation.js';
 import { runOrchestration } from './orchestrator.js';
 import { ingestTelemetry } from './telemetry.js';
 import { getImpact } from './impact.js';
+import { getDeviceHealth } from './deviceHealth.js';
+import { getRootCauses } from './rootCause.js';
 import { resolveOrderContext, withTimeout, listOrders } from './orders.js';
 import { truncate } from './nlp.js';
 import { seedDemoData } from './seed.js';
@@ -1425,12 +1427,42 @@ app.get('/api/admin/impact', requireAuth, asyncHandler(async (req, res) => {
   res.json(getImpact());
 }));
 
-/** 智能体编排留痕（管理后台）：可视化「AI 如何决策」的推理链路，可选按会话过滤 */
+/** 设备健康度看板（管理后台）：把端侧遥测聚合成健康分 + 趋势 + 维护建议（预测性维护） */
+app.get('/api/admin/device-health', requireAuth, asyncHandler(async (req, res) => {
+  res.json(getDeviceHealth());
+}));
+
+/** 工单根因聚类洞察（管理后台）：反复出现的根因 + 类型判定 + 可执行建议 */
+app.get('/api/admin/root-causes', requireAuth, asyncHandler(async (req, res) => {
+  const windowDays = Math.min(365, Math.max(1, Number(req.query.windowDays) || 30));
+  res.json(getRootCauses(windowDays));
+}));
+
+/** 智能体编排留痕（管理后台）：可视化「AI 如何决策」的推理链路，可选按会话过滤。
+ *  归一化 JSON 文本列（steps / workflow_matched）为结构化值，保证与 SSE agentTrace 事件同构——
+ *  前端两种消费路径（实时 trace / 历史留痕）可共用同一套渲染组件，无需各写一份解析。 */
 app.get('/api/admin/agent-runs', requireAuth, asyncHandler(async (req, res) => {
   const sessionId = req.query.sessionId ? String(req.query.sessionId) : undefined;
   let runs = db.listAgentRuns(500);
   if (sessionId) runs = runs.filter((r) => r.session_id === sessionId);
-  res.json({ runs, total: runs.length });
+  const normalized = runs.map((r) => {
+    let steps: unknown = [];
+    try {
+      const parsed = JSON.parse(r.steps || '[]');
+      if (Array.isArray(parsed)) steps = parsed;
+    } catch {
+      /* 保留空数组兜底，避免单行脏数据打垮整个看板 */
+    }
+    let workflowMatched: unknown = null;
+    try {
+      const parsedWm = JSON.parse(r.workflow_matched || 'null');
+      if (Array.isArray(parsedWm)) workflowMatched = parsedWm;
+    } catch {
+      /* 同上 */
+    }
+    return { ...r, steps, workflow_matched: workflowMatched };
+  });
+  res.json({ runs: normalized, total: normalized.length });
 }));
 
 /** 知识库检索预览（管理后台调试用） */
@@ -1816,6 +1848,19 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 /* ============================ 启动 ============================ */
+
+// 进程级兜底：客服服务是长驻多入口进程（HTTP / SSE / 邮件轮询 / 写入队列 / 定时任务），
+// 任一后台异步路径遗漏 .catch 都会变成 unhandledRejection；Node ≥15 默认行为是直接杀进程。
+// 这里降级为「记录 + 继续服务」：单次后台失败不应演变为整站不可用（P0 事故模式）。
+// 典型场景：telemetry 自动建单的 FK 异常、webhook 通知超时、事件流上报失败。
+process.on('unhandledRejection', (reason) => {
+  logger.error(`[process] 未处理的 Promise 拒绝（已降级，服务继续）：${(reason as Error)?.message || reason}`);
+});
+process.on('uncaughtException', (err) => {
+  // 未捕获同步异常同样不主动退出：HTTP 层已有 asyncHandler + errorHandler 兜底；
+  // 能走到这里说明是后台路径，记录后让进程继续承载请求。
+  logger.error(`[process] 未捕获异常（已降级，服务继续）：${err?.message || err}`);
+});
 
 // 预热内存会话索引，保证异步渠道线程续接在服务启动后即可命中（无需等首条 DB 回退）
 preloadSessionRegistry();

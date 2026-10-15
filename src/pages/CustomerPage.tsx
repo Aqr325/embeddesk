@@ -3,6 +3,7 @@ import { MessageSquareText, Sparkles, BookOpen, RotateCcw, Wifi, WifiOff, UserSq
 import { Skeleton } from '../components/ui/Skeleton';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useChat } from '../hooks/useChat';
+import { useVoice } from '../hooks/useVoice';
 import { api } from '../hooks/useApi';
 import { MessageBubble } from '../components/MessageBubble';
 import { ChatInput } from '../components/ChatInput';
@@ -28,6 +29,25 @@ export function CustomerPage() {
     reset,
     rate,
   } = useChat();
+
+  /* 语音交互：语音输入（转写后直接发送）+ 语音播报（可选自动朗读）。
+     能力探测失败时 useVoice 内部静默降级，UI 自动隐藏入口。 */
+  const voice = useVoice({
+    onFinal: (text) => {
+      // 识别结束即发送，形成「说一句 → 问一句」的自然对话节奏
+      if (!isStreaming) void send(text, customerId ?? undefined);
+    },
+  });
+
+  /* 自动播报：开启后，最新一条 AI 回复生成完毕即朗读 */
+  const lastSpokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!voice.autoSpeak) return;
+    const last = [...messages].reverse().find((m) => m.role === 'assistant' && !m.isStreaming && m.content);
+    if (!last || last.id === lastSpokenRef.current) return;
+    lastSpokenRef.current = last.id;
+    voice.speak(last.id, last.content);
+  }, [messages, voice.autoSpeak, voice]);
 
   const [faqs, setFaqs] = useState<Faq[]>([]);
   const [faqQuery, setFaqQuery] = useState('');
@@ -129,6 +149,7 @@ export function CustomerPage() {
                 message={m}
                 rating={m.id ? ratings[m.id] : undefined}
                 onRate={(r, t, c, res) => rate(m.id, r, t, c, res)}
+                voice={voice}
               />
               {m.role === 'assistant' && m.trace && (
                 <div className="flex justify-start mt-1.5">
@@ -183,7 +204,13 @@ export function CustomerPage() {
         </div>
 
         {/* 输入区 */}
-        <ChatInput onSend={(text) => send(text, customerId ?? undefined)} onStop={stop} disabled={isStreaming} streaming={isStreaming} />
+        <ChatInput
+          onSend={(text) => send(text, customerId ?? undefined)}
+          onStop={stop}
+          disabled={isStreaming}
+          streaming={isStreaming}
+          voice={voice}
+        />
       </div>
 
       {/* 右侧栏：实时分析 + 知识库 */}
