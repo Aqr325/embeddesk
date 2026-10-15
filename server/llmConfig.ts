@@ -12,6 +12,52 @@
  */
 import * as db from './db.js';
 
+/** 接入协议标识 */
+export type ProviderId = 'auto' | 'openai' | 'anthropic' | 'gemini';
+
+/**
+ * 各协议元数据：标签、是否支持「端点探测可用模型」、默认端点、端点占位符、提示。
+ * 前端据此渲染协议下拉、端点提示与「探测」按钮可用性。
+ */
+export const PROVIDER_META: Record<ProviderId, {
+  label: string;
+  discoverable: boolean;
+  defaultEndpoint: string;
+  endpointPlaceholder: string;
+  hint: string;
+}> = {
+  auto: {
+    label: '自动（平台默认）',
+    discoverable: false,
+    defaultEndpoint: '',
+    endpointPlaceholder: '自动模式无需填写端点',
+    hint: '沿用平台内置 SDK / Gemini 默认接入，模型选项见下方下拉（auto / glm / hy3 / deepseek 等）。',
+  },
+  openai: {
+    label: 'OpenAI 兼容（/v1/chat/completions）',
+    discoverable: true,
+    defaultEndpoint: 'https://api.openai.com/v1',
+    endpointPlaceholder: 'https://api.openai.com/v1 或自建 vLLM/Ollama 端点',
+    hint: '兼容 OpenAI 协议的网关（OpenAI、DeepSeek、Moonshot、通义千问、vLLM、Ollama 等）。填端点 + 密钥后点「探测可用模型」自动拉取。',
+  },
+  anthropic: {
+    label: 'Anthropic（/v1/messages）',
+    discoverable: true,
+    defaultEndpoint: 'https://api.anthropic.com/v1',
+    endpointPlaceholder: 'https://api.anthropic.com/v1',
+    hint: 'Anthropic Claude 系列。无公开模型列表接口，「探测」将返回官方已知模型清单供选择。',
+  },
+  gemini: {
+    label: 'Gemini（Vertex / AI Studio）',
+    discoverable: true,
+    defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+    endpointPlaceholder: 'https://generativelanguage.googleapis.com/v1beta',
+    hint: 'Google Gemini。配置 API Key 后点「探测」可列出可生成内容的模型。也可经环境变量（GEMINI_API_KEY / GOOGLE_APPLICATION_CREDENTIALS）鉴权。',
+  },
+};
+
+export const PROVIDER_IDS = Object.keys(PROVIDER_META) as ProviderId[];
+
 /** 默认 persona 基础提示词（管理员清空配置时回退到此） */
 export const DEFAULT_BASE_PROMPT = `你是「{BRAND}」的智能客服助手「小云」，负责在线解答客户咨询。
 
@@ -23,6 +69,7 @@ export const DEFAULT_BASE_PROMPT = `你是「{BRAND}」的智能客服助手「�
 
 /** 配置缺省值（与 db 迁移初值保持一致，作为兜底） */
 export const LLM_CONFIG_DEFAULTS = {
+  provider: 'auto' as ProviderId,
   model: 'auto',
   apiKey: '',
   endpoint: '',
@@ -38,6 +85,7 @@ export const MAX_REPLY_MIN = 100;
 export const MAX_REPLY_MAX = 2000;
 
 export interface ResolvedLlmConfig {
+  provider: string;
   model: string;
   apiKey: string;
   endpoint: string;
@@ -52,6 +100,7 @@ export interface ResolvedLlmConfig {
 export function getResolvedConfig(): ResolvedLlmConfig {
   const c = db.getLlmConfig();
   return {
+    provider: (PROVIDER_IDS.includes(c.provider as ProviderId) ? c.provider : 'auto'),
     model: c.model || LLM_CONFIG_DEFAULTS.model,
     apiKey: c.apiKey,
     endpoint: c.endpoint,
@@ -79,7 +128,12 @@ export function clampMaxReply(n: number): number {
  */
 export function getGeminiConfig(): { model: string; temperature: number; systemPrompt: string } {
   const c = getResolvedConfig();
-  const model = (process.env.GEMINI_MODEL || '').trim() || 'gemini-2.5-flash';
+  const envModel = (process.env.GEMINI_MODEL || '').trim();
+  // 当协议显式为 gemini 且 DB 选了具体模型时，DB 模型优先于默认（env 仍最高优先）
+  let model = envModel || 'gemini-2.5-flash';
+  if (c.provider === 'gemini' && c.model && c.model !== 'auto') {
+    model = envModel || c.model;
+  }
   const tempEnv = (process.env.GEMINI_TEMPERATURE || '').trim();
   const temperature = tempEnv !== '' ? clampTemp(Number(tempEnv)) : clampTemp(c.temperature);
   const systemPrompt = (process.env.GEMINI_SYSTEM_PROMPT || '').trim() || c.basePrompt;
@@ -89,6 +143,7 @@ export function getGeminiConfig(): { model: string; temperature: number; systemP
 /** 对外脱敏：永不返回明文 apiKey */
 export function toPublicConfig(c: ResolvedLlmConfig) {
   return {
+    provider: c.provider,
     model: c.model,
     hasApiKey: Boolean(c.apiKey && c.apiKey.trim()),
     endpoint: c.endpoint,

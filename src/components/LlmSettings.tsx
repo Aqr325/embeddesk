@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bot, Save, FlaskConical, RotateCcw, Loader2, AlertCircle, CheckCircle2, KeyRound, Thermometer, Type, Cpu } from 'lucide-react';
-import { api, type LlmConfigPublic, type LlmConfigTestResult } from '../hooks/useApi';
+import { Bot, Save, FlaskConical, RotateCcw, Loader2, AlertCircle, CheckCircle2, KeyRound, Thermometer, Type, Cpu, Network, Search } from 'lucide-react';
+import { api, type LlmConfigPublic, type LlmConfigTestResult, type ProviderMeta } from '../hooks/useApi';
 
 const TEMP_MIN = 0;
 const TEMP_MAX = 1;
@@ -10,20 +10,25 @@ const MAX_REPLY_MAX = 2000;
 export function LlmSettings() {
   const [config, setConfig] = useState<LlmConfigPublic | null>(null);
   const [models, setModels] = useState<Array<{ modelId: string; name: string }>>([]);
+  const [providers, setProviders] = useState<ProviderMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedTip, setSavedTip] = useState<string | null>(null);
+  const [discoverNote, setDiscoverNote] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<LlmConfigTestResult | null>(null);
 
   // 表单（与后端字段对齐）
+  const [provider, setProvider] = useState('auto');
   const [model, setModel] = useState('auto');
   const [apiKey, setApiKey] = useState(''); // 仅在用户主动填写时发送；不回显明文
   const [endpoint, setEndpoint] = useState('');
   const [temperature, setTemperature] = useState(0.7);
   const [maxReplyLength, setMaxReplyLength] = useState(600);
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [discoveredModels, setDiscoveredModels] = useState<Array<{ modelId: string; name: string }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,6 +38,8 @@ export function LlmSettings() {
       const c = cfgRes.config;
       setConfig(c);
       setModels(modelsRes.models);
+      setProviders(modelsRes.providers || []);
+      setProvider(c.provider || 'auto');
       setModel(c.model || 'auto');
       setEndpoint(c.endpoint || '');
       setTemperature(c.temperature ?? 0.7);
@@ -49,12 +56,49 @@ export function LlmSettings() {
     load();
   }, [load]);
 
+  const handleProviderChange = (next: string) => {
+    setProvider(next);
+    setDiscoverNote(null);
+    setDiscoveredModels([]);
+    const meta = providers.find((p) => p.id === next);
+    // 切换协议时：端点（仅当为空时）填默认；模型重置（auto 默认 auto，其余留空待探测/手动）
+    if (!endpoint.trim() && meta?.defaultEndpoint) setEndpoint(meta.defaultEndpoint);
+    setModel(next === 'auto' ? 'auto' : '');
+    setSavedTip(null);
+  };
+
+  const handleDiscover = async () => {
+    const meta = providers.find((p) => p.id === provider);
+    if (!meta?.discoverable) return;
+    setDiscovering(true);
+    setDiscoverNote(null);
+    setError(null);
+    try {
+      const res = await api.discoverModels({ provider, endpoint, apiKey: apiKey || undefined });
+      if (res.ok && res.models?.length) {
+        setDiscoveredModels(res.models);
+        // 若当前 model 不在列表中则默认选第一个
+        if (!res.models.some((m) => m.modelId === model)) setModel(res.models[0].modelId);
+        setDiscoverNote(`已发现 ${res.models.length} 个可用模型，已自动填充下拉`);
+      } else if (res.ok) {
+        setDiscoverNote('该端点未返回可用模型列表');
+      } else {
+        setDiscoverNote(`探测失败：${res.error || '未知错误'}`);
+      }
+    } catch (e: any) {
+      setError(e?.message || '探测失败');
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     setSavedTip(null);
     try {
       const payload: Record<string, unknown> = {
+        provider,
         model,
         endpoint,
         temperature,
@@ -92,6 +136,19 @@ export function LlmSettings() {
     setSavedTip(null);
   };
 
+  // 模型下拉选项：auto 用平台默认列表；其余协议优先用探测结果
+  const isAuto = provider === 'auto';
+  const meta = providers.find((p) => p.id === provider);
+  const modelOptions: Array<{ modelId: string; name: string }> = isAuto
+    ? models
+    : discoveredModels.length
+      ? [...discoveredModels, ...(model && !discoveredModels.some((m) => m.modelId === model) ? [{ modelId: model, name: model }] : [])]
+      : model && !models.some((m) => m.modelId === model)
+        ? [{ modelId: model, name: model }]
+        : [];
+  const showModelSelect = isAuto || modelOptions.length > 0;
+  const endpointPlaceholder = meta?.endpointPlaceholder || 'https://your-llm-endpoint （留空使用默认）';
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground p-4">
@@ -115,40 +172,95 @@ export function LlmSettings() {
         </div>
       )}
 
-      {/* 模型类型 */}
+      {/* 接入协议 + 模型 / 端点 */}
       <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-4">
         <div className="flex items-center gap-2">
-          <Cpu size={16} className="text-accent" />
-          <h3 className="text-sm font-medium">模型类型</h3>
+          <Network size={16} className="text-accent" />
+          <h3 className="text-sm font-medium">接入协议与模型</h3>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">对话模型</label>
+            <label className="block text-xs text-muted-foreground mb-1.5">接入协议</label>
             <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
+              value={provider}
+              onChange={(e) => handleProviderChange(e.target.value)}
               className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
             >
-              {models.map((m) => (
-                <option key={m.modelId} value={m.modelId}>
-                  {m.name}
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
                 </option>
               ))}
-              {!models.some((m) => m.modelId === model) && <option value={model}>{model}</option>}
+              {!providers.some((p) => p.id === provider) && <option value={provider}>{provider}</option>}
             </select>
-            <p className="text-xs text-muted-foreground mt-1.5">AI 自动应答、意图识别与工具调用均运行于该模型。</p>
+            {meta?.hint && <p className="text-xs text-muted-foreground mt-1.5">{meta.hint}</p>}
           </div>
           <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">自定义端点（可选）</label>
-            <input
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              placeholder="https://your-llm-endpoint （留空使用默认）"
-              className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
-            />
-            <p className="text-xs text-muted-foreground mt-1.5">仅自建/私有化部署需要；留空即使用平台默认接入点。</p>
+            <label className="block text-xs text-muted-foreground mb-1.5">对话模型</label>
+            {showModelSelect ? (
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+              >
+                {modelOptions.map((m) => (
+                  <option key={m.modelId} value={m.modelId}>
+                    {m.name}
+                  </option>
+                ))}
+                {!modelOptions.some((m) => m.modelId === model) && model && <option value={model}>{model}</option>}
+              </select>
+            ) : (
+              <input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder={provider === 'gemini' ? '如 gemini-2.5-flash' : provider === 'anthropic' ? '如 claude-sonnet-4-20250514' : '如 gpt-4o-mini'}
+                className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+              />
+            )}
+            <p className="text-xs text-muted-foreground mt-1.5">AI 自动应答、意图识别与工具调用均运行于该模型。</p>
           </div>
         </div>
+
+        {/* 端点 + 探测（非 auto 协议显示） */}
+        {!isAuto && (
+          <div className="space-y-3 border-t border-border pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">端点（Endpoint）</label>
+                <input
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder={endpointPlaceholder}
+                  className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
+                />
+                <p className="text-xs text-muted-foreground mt-1.5">OpenAI 兼容填至 /v1 层级；其余协议填根地址，系统自动拼接路径。</p>
+              </div>
+              <div className="flex flex-col justify-end">
+                <button
+                  onClick={handleDiscover}
+                  disabled={discovering || !meta?.discoverable}
+                  className="inline-flex items-center justify-center gap-1.5 text-sm px-4 py-2 min-h-[44px] rounded-lg border border-border text-muted-foreground hover:border-accent hover:text-accent transition-base disabled:opacity-50"
+                  title={meta?.discoverable ? '按端点自动拉取可用模型' : '该协议无需探测'}
+                >
+                  {discovering ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+                  {discovering ? '探测中…' : '探测可用模型'}
+                </button>
+              </div>
+            </div>
+            {discoverNote && (
+              <div
+                className={`rounded-xl border px-4 py-2 text-sm ${
+                  discoverNote.startsWith('探测失败')
+                    ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                    : 'border-accent/40 bg-accent/10 text-accent'
+                }`}
+              >
+                {discoverNote}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* API 密钥 */}
@@ -166,7 +278,7 @@ export function LlmSettings() {
           className="w-full min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm focus:border-accent outline-none"
         />
         <p className="text-xs text-muted-foreground">
-          留空表示不更改现有密钥。密钥经环境变量透传至模型网关（best-effort，取决于部署形态）。
+          留空表示不更改现有密钥。密钥经环境变量/请求头透传至模型网关（best-effort，取决于部署形态）。
         </p>
       </div>
 
@@ -191,7 +303,7 @@ export function LlmSettings() {
             onChange={(e) => setTemperature(Number(e.target.value))}
             className="w-full accent-accent"
           />
-          <p className="text-xs text-muted-foreground mt-1.5">越低越稳定精准，越高越发散有创意。经 CLI 参数透传（best-effort）。</p>
+          <p className="text-xs text-muted-foreground mt-1.5">越低越稳定精准，越高越发散有创意。经透传参数生效（best-effort）。</p>
         </div>
 
         <div>

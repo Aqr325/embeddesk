@@ -221,6 +221,9 @@ async function knowledgeFallback(opts: CallAgentOptions, reason: string): Promis
   throw new Error(`GEMINI_UNAVAILABLE:${reason}`);
 }
 
+/** 供多协议直连接入层（llmProviders.ts）复用的知识库直答降级 */
+export { knowledgeFallback };
+
 /* ============================ 主入口：Gemini function calling 循环 ============================ */
 
 /**

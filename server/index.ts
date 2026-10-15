@@ -38,7 +38,11 @@ import {
   TEMP_MAX,
   MAX_REPLY_MIN,
   MAX_REPLY_MAX,
+  PROVIDER_IDS,
+  PROVIDER_META,
+  type ProviderId,
 } from './llmConfig.js';
+import { discoverModels } from './llmProviders.js';
 import { ingestExternalMessage, type ChannelType } from './channels.js';
 import { summarizeConversation } from './summarize.js';
 import { escalateFromContext, higherPriority } from './escalation.js';
@@ -798,6 +802,15 @@ app.get('/api/models', async (_req, res) => {
     models: KNOWN_SUPPORTED_MODELS.map((m) => ({ modelId: m, name: m })),
     defaultModel: cfg.model,
     sdkBroken: isSdkBroken(),
+    providers: PROVIDER_IDS.map((id) => ({
+      id,
+      label: PROVIDER_META[id].label,
+      discoverable: PROVIDER_META[id].discoverable,
+      defaultEndpoint: PROVIDER_META[id].defaultEndpoint,
+      endpointPlaceholder: PROVIDER_META[id].endpointPlaceholder,
+      hint: PROVIDER_META[id].hint,
+    })),
+    defaultProvider: cfg.provider,
   });
 });
 
@@ -812,6 +825,14 @@ app.get('/api/admin/llm-config', requireAuth, asyncHandler(async (_req, res) => 
 app.post('/api/admin/llm-config', requireAuth, requireRole('admin', 'manager'), asyncHandler(async (req, res) => {
   const body = req.body ?? {};
   const patch: Record<string, unknown> = {};
+
+  if (body.provider !== undefined) {
+    const provider = asString(body.provider, { max: 24, name: 'provider' });
+    if (!PROVIDER_IDS.includes(provider as ProviderId)) {
+      return res.status(400).json({ error: `不支持的接入协议：${provider}` });
+    }
+    patch.provider = provider;
+  }
 
   if (body.model !== undefined) {
     patch.model = asString(body.model, { max: 64, name: 'model' });
@@ -866,6 +887,23 @@ app.post('/api/admin/llm-config/test', requireAuth, requireRole('admin', 'manage
     }
   } catch (e: any) {
     res.json({ ok: false, error: String(e?.message || e).slice(0, 200), latencyMs: Date.now() - t0 });
+  }
+}));
+
+/** 探测可用模型：根据协议 + 端点 + 密钥，自动拉取该端点可用模型列表（供前端下拉自动填充） */
+app.post('/api/admin/llm-config/discover', requireAuth, requireRole('admin', 'manager'), asyncHandler(async (req, res) => {
+  const body = req.body ?? {};
+  const provider = asString(body.provider || 'openai', { max: 24, name: 'provider' });
+  if (!PROVIDER_IDS.includes(provider as ProviderId)) {
+    return res.status(400).json({ ok: false, error: `不支持的接入协议：${provider}` });
+  }
+  const endpoint = asString(body.endpoint || '', { max: 512, name: 'endpoint' });
+  const apiKey = asString(body.apiKey || '', { max: 512, name: 'apiKey' });
+  const result = await discoverModels(provider, endpoint, apiKey);
+  if (result.ok) {
+    res.json({ ok: true, models: result.models });
+  } else {
+    res.json({ ok: false, error: result.error });
   }
 }));
 

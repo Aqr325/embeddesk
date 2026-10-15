@@ -503,6 +503,15 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // 多协议模型接入：llm_config 增设 provider 列（协议标识），默认 'auto'（沿用既有 SDK 路径）。
+    // 新协议（openai / anthropic / gemini）由 agentCore 按 provider 路由直连。
+    version: 17,
+    name: 'LLM 配置：llm_config(provider) 多协议标识',
+    up: () => {
+      ensureColumn('llm_config', 'provider', "provider TEXT NOT NULL DEFAULT 'auto'");
+    },
+  },
 ];
 
 /** 按 user_version 顺序应用未执行的迁移，保证 schema 演进可追踪、幂等、可重放 */
@@ -1581,6 +1590,7 @@ export function getDbMeta(): DbMeta {
 /* ============================ LLM 配置（llm_config 单行表） ============================ */
 
 export interface DbLlmConfig {
+  provider: string;
   model: string;
   apiKey: string;
   endpoint: string;
@@ -1594,10 +1604,11 @@ export interface DbLlmConfig {
 export function getLlmConfig(): DbLlmConfig {
   const row = db
     .prepare(
-      `SELECT model, api_key, endpoint, temperature, max_reply_length, system_prompt, updated_at FROM llm_config WHERE id = 1`,
+      `SELECT provider, model, api_key, endpoint, temperature, max_reply_length, system_prompt, updated_at FROM llm_config WHERE id = 1`,
     )
     .get() as
     | {
+        provider: string;
         model: string;
         api_key: string;
         endpoint: string;
@@ -1608,6 +1619,7 @@ export function getLlmConfig(): DbLlmConfig {
       }
     | undefined;
   return {
+    provider: row?.provider || 'auto',
     model: row?.model ?? 'auto',
     apiKey: row?.api_key ?? '',
     endpoint: row?.endpoint ?? '',
@@ -1622,6 +1634,7 @@ export function getLlmConfig(): DbLlmConfig {
 export function saveLlmConfig(patch: Partial<Omit<DbLlmConfig, 'updatedAt'>>): DbLlmConfig {
   const current = getLlmConfig();
   const next: DbLlmConfig = {
+    provider: patch.provider !== undefined ? patch.provider : current.provider,
     model: patch.model ?? current.model,
     apiKey: patch.apiKey !== undefined ? patch.apiKey : current.apiKey,
     endpoint: patch.endpoint !== undefined ? patch.endpoint : current.endpoint,
@@ -1631,8 +1644,17 @@ export function saveLlmConfig(patch: Partial<Omit<DbLlmConfig, 'updatedAt'>>): D
     updatedAt: new Date().toISOString(),
   };
   db.prepare(
-    `UPDATE llm_config SET model = ?, api_key = ?, endpoint = ?, temperature = ?, max_reply_length = ?, system_prompt = ?, updated_at = ? WHERE id = 1`,
-  ).run(next.model, next.apiKey, next.endpoint, next.temperature, next.maxReplyLength, next.systemPrompt, next.updatedAt);
+    `UPDATE llm_config SET provider = ?, model = ?, api_key = ?, endpoint = ?, temperature = ?, max_reply_length = ?, system_prompt = ?, updated_at = ? WHERE id = 1`,
+  ).run(
+    next.provider,
+    next.model,
+    next.apiKey,
+    next.endpoint,
+    next.temperature,
+    next.maxReplyLength,
+    next.systemPrompt,
+    next.updatedAt,
+  );
   return next;
 }
 

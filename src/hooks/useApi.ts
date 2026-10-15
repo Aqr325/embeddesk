@@ -200,6 +200,7 @@ export type EmployeeStatus = 'active' | 'disabled';
 
 /** 大模型配置（对外脱敏形态：apiKey 不返回明文，仅 hasApiKey 布尔） */
 export interface LlmConfigPublic {
+  provider: string;
   model: string;
   hasApiKey: boolean;
   endpoint: string;
@@ -214,6 +215,23 @@ export interface LlmConfigTestResult {
   usedModel?: string;
   latencyMs?: number;
   reply?: string;
+  error?: string;
+}
+
+/** 接入协议元信息（来自 /api/models 的 providers 字段） */
+export interface ProviderMeta {
+  id: string;
+  label: string;
+  discoverable: boolean;
+  defaultEndpoint: string;
+  endpointPlaceholder: string;
+  hint: string;
+}
+
+/** 探测可用模型返回 */
+export interface DiscoverResult {
+  ok: boolean;
+  models?: Array<{ modelId: string; name: string }>;
   error?: string;
 }
 
@@ -258,8 +276,8 @@ export interface Site {
 export const api = {
   getMeta: () => http<AppMeta & { mode: string; engine: string }>('/meta'),
 
-  /** 公开模型列表（无需鉴权），供「模型配置」下拉框使用 */
-  getModels: () => http<{ models: Array<{ modelId: string; name: string }>; defaultModel: string; sdkBroken: boolean }>('/models'),
+  /** 公开模型列表 + 协议元信息（无需鉴权），供「模型配置」下拉框使用 */
+  getModels: () => http<{ models: Array<{ modelId: string; name: string }>; defaultModel: string; sdkBroken: boolean; providers: ProviderMeta[]; defaultProvider: string }>('/models'),
 
   listSessions: () => http<{ sessions: SessionDTO[] }>('/sessions'),
 
@@ -427,8 +445,12 @@ export const api = {
   /* ---------- 大模型（LLM）配置 ---------- */
   getLlmConfig: () => http<{ config: LlmConfigPublic }>('/admin/llm-config'),
 
-  saveLlmConfig: (data: Partial<Pick<LlmConfigPublic, 'model' | 'endpoint' | 'temperature' | 'maxReplyLength' | 'systemPrompt'>> & { apiKey?: string }) =>
+  saveLlmConfig: (data: Partial<Pick<LlmConfigPublic, 'provider' | 'model' | 'endpoint' | 'temperature' | 'maxReplyLength' | 'systemPrompt'>> & { apiKey?: string }) =>
     http<{ config: LlmConfigPublic }>('/admin/llm-config', { method: 'POST', body: JSON.stringify(data) }),
+
+  /** 探测可用模型：按协议 + 端点 + 密钥拉取端点可用模型列表 */
+  discoverModels: (data: { provider: string; endpoint?: string; apiKey?: string }) =>
+    http<DiscoverResult>('/admin/llm-config/discover', { method: 'POST', body: JSON.stringify(data) }),
 
   testLlmConfig: () => http<LlmConfigTestResult>('/admin/llm-config/test', { method: 'POST' }),
 

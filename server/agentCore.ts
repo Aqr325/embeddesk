@@ -16,6 +16,7 @@ import { createCsaAgentTools, CSA_TOOL_NAMES, type CsaToolContext, type CsaToolC
 import { logger } from './logger.js';
 import { getResolvedConfig, DEFAULT_BASE_PROMPT, getGeminiConfig } from './llmConfig.js';
 import { callAgentGemini, geminiConfigured } from './geminiAgent.js';
+import { callOpenAiCompatible, callAnthropic } from './llmProviders.js';
 
 /* ============================ 模型与模式常量 ============================ */
 
@@ -205,6 +206,8 @@ export interface CallAgentOptions {
   toolCtx?: CsaToolContext;
   /** 多轮上下文：最近若干轮对话的纯文本，拼接到 prompt 之前，使模型具备跨轮记忆 */
   historyText?: string;
+  /** 显式协议覆盖（缺省取配置 provider）；用于测试或跨协议调用 */
+  provider?: string;
 }
 
 export interface CallAgentResult {
@@ -245,17 +248,27 @@ export function buildHistoryText(
  * - maxReplyLength：应用层硬截断（双保险于系统提示词约束），并保护转人工标记不被截断。
  */
 export async function callAgent(opts: CallAgentOptions): Promise<CallAgentResult> {
-  // Hack2skill（AI-Builder-Cup 改装方案 §4 契约1）：Gemini 引擎优先——
-  // 配置 GEMINI_API_KEY / GOOGLE_APPLICATION_CREDENTIALS 或显式 AGENT_PROVIDER=gemini 即整体切换，
-  // 签名与 CallAgentResult 返回结构不变，index.ts / channels.ts 零改动。
+  // Hack2skill（AI-Builder-Cup 改装方案 §4/§5）：多协议路由——
+  // 管理员在「模型配置」选择的 provider 决定直连引擎；auto 沿用既有 SDK / Gemini 默认路径。
   const prompt = opts.historyText ? `${opts.historyText}\n\n【用户当前消息】\n${opts.prompt}` : opts.prompt;
-  if (geminiConfigured()) {
+  const cfg = getResolvedConfig();
+  const provider = (opts.provider || cfg.provider || 'auto');
+  const effectiveModel = opts.model || cfg.model;
+
+  // 显式协议直连（OpenAI 兼容 / Anthropic）：原生 fetch 调用，与 SDK / Gemini 同构
+  if (provider === 'openai') {
+    return callOpenAiCompatible({ ...opts, prompt, model: effectiveModel });
+  }
+  if (provider === 'anthropic') {
+    return callAnthropic({ ...opts, prompt, model: effectiveModel });
+  }
+
+  // gemini 协议（DB 驱动）或 env 驱动（GEMINI_API_KEY / GOOGLE_APPLICATION_CREDENTIALS / AGENT_PROVIDER=gemini）
+  if (provider === 'gemini' || geminiConfigured()) {
     return callAgentGemini({ ...opts, prompt });
   }
 
   const bundle = opts.toolCtx ? createCsaAgentTools(opts.toolCtx) : null;
-  const cfg = getResolvedConfig();
-  const effectiveModel = opts.model || cfg.model;
 
   // 配置透传参数（best-effort）：仅在确有非空值时附加，避免无谓改动 CLI 启动参数
   const configExtras: Record<string, unknown> = {};
