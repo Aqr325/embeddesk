@@ -171,8 +171,9 @@ function generateContentUrl(model: string): string {
   return `${base}/projects/${project}/locations/${loc}/publishers/google/models/${model}:generateContent`;
 }
 
-/** 从 usageMetadata 提取有限数字（否则 undefined） */
+/** 从 usageMetadata 提取有限数字（null/''/NaN 一律 undefined） */
 function numOrUndef(v: unknown): number | undefined {
+  if (v === null || v === undefined || v === '') return undefined;
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
@@ -201,8 +202,9 @@ function validateToolArgs(name: string, args: unknown): string | null {
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
-  bundle: ReturnType<typeof createCsaAgentTools>,
+  bundle: ReturnType<typeof createCsaAgentTools> | null,
 ): Promise<string> {
+  if (!bundle) return '工具调用当前不可用。';
   const t = bundle.tools.find((x) => x.name === name);
   if (!t) return `工具 ${name} 当前不可用。`;
   const r: any = await t.handler(args);

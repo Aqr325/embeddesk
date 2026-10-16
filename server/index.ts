@@ -544,9 +544,13 @@ async function runChatPipeline(
             agentError = e;
             break;
           }
-          // 模型名不可用（账号不支持）或返回空响应：通常很快返回，换下一个候选模型重试
+          // 模型名不可用（账号不支持）或返回空响应：通常很快返回，换下一个候选模型重试。
+          // 注意①：显式协议（openai/anthropic，单模型）时必须同时记 agentError——
+          //   否则循环结束后 full 为空且 agentError 为 null，会静默掉知识库直答而不给用户任何提示；
+          //   第三方端点的 400/404 属端点侧问题，不应污染 SDK 候选链的 badModels 集合。
           if (/model|service info not found|invalid|not found|empty/i.test(msg)) {
-            badModels.add(tryModel);
+            if (!explicitProtocol) badModels.add(tryModel);
+            agentError = e;
             continue;
           }
           // 超时等其它错误：消耗预算，继续尝试下一个候选模型，而非立即放弃

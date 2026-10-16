@@ -4,7 +4,7 @@
  *
  * 一条命令跑完全部验证闭环，输出汇总表：
  *   ① 起本地 mock GCP（mock-vertex.mjs：Gemini / Vertex Search / Firestore / BigQuery / Document AI）
- *   ② 依次运行 7 个验收脚本（tsx）：
+ *   ② 依次运行 9 个验收脚本（tsx）：
  *      - verify_insights     洞察聚合（纯本地 JSONL，12 断言）
  *      - verify_agent_tools  领域工具层（search_knowledge / query_order / create_ticket 防重）
  *      - verify_gemini_agent Gemini 内核 T1–T9（function calling / 降级 / 检索映射 / 路由开关）
@@ -13,6 +13,7 @@
  *      - verify_queries      真实 catalog 28 query 检索 Top3 命中率（≥80% 验收线）
  *      - verify_http         HTTP 全端点契约冒烟（40+ API，自起服务）
  *      - verify_award        获奖级四大增强（编排中枢/成效看板/主动关怀/端侧遥测，自起服务）
+ *      - verify_llm_providers 多协议直连（400 参数自修复/工具循环/回退链/调用埋点，本地 mock）
  *   ③ 汇总通过/失败，退出码 0=全过 1=有失败
  *
  * 运行：npm run verify   （或 node scripts/verify-all.mjs）
@@ -146,6 +147,16 @@ const SUITES = [
       INGEST_SECRET: 'award-secret',
       ALLOWED_ORIGINS: 'http://localhost:5173',
       SEED_DEMO: '1',
+    },
+  },
+  {
+    name: 'verify_llm_providers',
+    title: '多协议直连（400 自修复/工具循环/回退链/埋点，本地 mock）',
+    args: ['scripts/verify_llm_providers.ts'],
+    env: {
+      // 自起 mock OpenAI 兼容 + Anthropic 服务；端口与 mock 主端口隔离；独立 db 保证迁移基线干净
+      MOCK_PORT: String(PORT + 200),
+      CSA_DB_PATH: 'data/verify_llm.db',
     },
   },
 ];

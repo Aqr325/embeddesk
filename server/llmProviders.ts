@@ -134,8 +134,9 @@ function validateToolArgs(name: string, args: unknown): string | null {
 async function runTool(
   name: string,
   args: Record<string, unknown>,
-  bundle: ReturnType<typeof createCsaAgentTools>,
+  bundle: ReturnType<typeof createCsaAgentTools> | null,
 ): Promise<string> {
+  if (!bundle) return '工具调用当前不可用（高级配置已关闭工具调用）。';
   const t = bundle.tools.find((x) => x.name === name);
   if (!t) return `工具 ${name} 当前不可用。`;
   const r: any = await t.handler(args);
@@ -219,10 +220,35 @@ function truncate(text: string, limit: number): string {
   return text;
 }
 
-/** 从响应 usage 字段提取有限数字（否则 undefined，避免把 null/NaN 写进埋点） */
+/** 从响应 usage 字段提取有限数字（null/''/NaN 一律 undefined，避免把无效值写进埋点） */
 function numOrUndef(v: unknown): number | undefined {
+  if (v === null || v === undefined || v === '') return undefined;
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+/* ============================ 400 参数自修复 ============================ */
+
+/**
+ * 识别端点以 HTTP 400 拒绝的「不支持的请求字段」，返回应剥离的字段名；无法识别返回 null。
+ * 背景：部分 OpenAI 兼容端点（o1 / gpt-5 等推理模型、部分网关）拒绝 temperature /
+ * max_tokens / tools / tool_choice / thinking 字段，一次 400 会让整条调用失败掉知识库。
+ * 与 geminiAgent「回灌错误让模型自修复」对应——此处是「请求字段自修复」。
+ */
+function detectUnsupportedParam(detail: string): 'temperature' | 'max_tokens' | 'tools' | 'tool_choice' | 'thinking' | null {
+  const d = detail.toLowerCase();
+  if (/temperature/.test(d)) return 'temperature';
+  if (/max_tokens|max_completion_tokens|max output tokens/.test(d)) return 'max_tokens';
+  if (/tool_choice/.test(d)) return 'tool_choice';
+  if (/thinking/.test(d)) return 'thinking';
+  if (/\btools?\b|function call|tool_use/.test(d)) return 'tools';
+  return null;
+}
+
+/** 从请求体中剥离指定字段（tools 连带移除 tool_choice，避免半组状态） */
+function stripBodyField(body: Record<string, unknown>, field: string): void {
+  delete body[field];
+  if (field === 'tools') delete body.tool_choice;
 }
 
 /* ============================ 探测可用模型 ============================ */
@@ -342,10 +368,26 @@ export async function callOpenAiCompatible(opts: CallAgentOptions, fallbackToKb 
   }
 
   try {
+    const strippedParams = new Set<string>();
+    let paramError: Error | null = null; // 首个 400 根因（剥离后仍失败时抛出它，而非二次错误的噪音）
     for (let round = 1; round <= MAX_ROUNDS; round++) {
       const resp = await fetchWithRetry(url, { method: 'POST', headers, body: JSON.stringify(body) });
       if (!resp.ok) {
-        const detail = (await resp.text().catch(() => '')).slice(0, 200);
+        const detail = (await resp.text().catch(() => '')).slice(0, 300);
+        // 400 参数自修复：端点拒绝某请求字段时剥离后重试（不消耗工具轮次），
+        // 每个字段至多剥离一次，全部剥离后仍 400 才抛根因
+        if (resp.status === 400) {
+          const field = detectUnsupportedParam(detail);
+          if (field && !strippedParams.has(field) && field in body) {
+            stripBodyField(body, field);
+            strippedParams.add(field);
+            paramError = new Error(`OPENAI_HTTP_400: ${detail}`);
+            logger.warn(`[llmProviders] 端点拒绝参数 ${field}，已自动剥离重试（不消耗工具轮次）`);
+            round -= 1;
+            continue;
+          }
+          throw paramError ?? new Error(`OPENAI_HTTP_400: ${detail}`);
+        }
         throw new Error(`OPENAI_HTTP_${resp.status}: ${detail}`);
       }
       const j = (await resp.json()) as any;
@@ -371,6 +413,7 @@ export async function callOpenAiCompatible(opts: CallAgentOptions, fallbackToKb 
       // 回灌助手消息（含 tool_calls）+ 工具结果，继续循环
       messages.push({ role: 'assistant', content: msg?.content ?? '', tool_calls: toolCalls });
       const toolResults: Array<Record<string, unknown>> = [];
+      let ti = 0;
       for (const tc of toolCalls) {
         const name = String(tc.function?.name || '');
         let args: Record<string, unknown> = {};
@@ -385,12 +428,14 @@ export async function callOpenAiCompatible(opts: CallAgentOptions, fallbackToKb 
           out = `参数校验失败：${invalid}`;
         } else {
           try {
-            out = await runTool(name, args, bundle!);
+            out = await runTool(name, args, bundle);
           } catch (e: any) {
             out = `工具执行失败：${String(e?.message || e).slice(0, 160)}`;
           }
         }
-        toolResults.push({ role: 'tool', tool_call_id: tc.id, content: out });
+        // tool_call_id 缺失时合成幂等 id（部分兼容网关不回 id，缺失会导致 API 400）
+        toolResults.push({ role: 'tool', tool_call_id: tc.id || `call_${round}_${ti}`, content: out });
+        ti += 1;
       }
       messages.push(...toolResults);
     }
@@ -437,10 +482,24 @@ export async function callAnthropic(opts: CallAgentOptions, fallbackToKb = true)
   };
 
   try {
+    const strippedParams = new Set<string>();
+    let paramError: Error | null = null;
     for (let round = 1; round <= MAX_ROUNDS; round++) {
       const resp = await fetchWithRetry(url, { method: 'POST', headers, body: JSON.stringify(body) });
       if (!resp.ok) {
-        const detail = (await resp.text().catch(() => '')).slice(0, 200);
+        const detail = (await resp.text().catch(() => '')).slice(0, 300);
+        if (resp.status === 400) {
+          const field = detectUnsupportedParam(detail);
+          if (field && !strippedParams.has(field) && field in body) {
+            stripBodyField(body, field);
+            strippedParams.add(field);
+            paramError = new Error(`ANTHROPIC_HTTP_400: ${detail}`);
+            logger.warn(`[llmProviders] Anthropic 端点拒绝参数 ${field}，已自动剥离重试（不消耗工具轮次）`);
+            round -= 1;
+            continue;
+          }
+          throw paramError ?? new Error(`ANTHROPIC_HTTP_400: ${detail}`);
+        }
         throw new Error(`ANTHROPIC_HTTP_${resp.status}: ${detail}`);
       }
       const j = (await resp.json()) as any;
@@ -466,6 +525,7 @@ export async function callAnthropic(opts: CallAgentOptions, fallbackToKb = true)
       // 回灌助手消息（含工具调用块）+ tool_result，继续循环
       messages.push({ role: 'assistant', content: blocks });
       const toolResults: Array<Record<string, unknown>> = [];
+      let ti = 0;
       for (const tu of toolUses) {
         const name = String(tu.name || '');
         const args = (tu.input && typeof tu.input === 'object' ? tu.input : {}) as Record<string, unknown>;
@@ -475,15 +535,16 @@ export async function callAnthropic(opts: CallAgentOptions, fallbackToKb = true)
           out = `参数校验失败：${invalid}`;
         } else {
           try {
-            out = await runTool(name, args, bundle!);
+            out = await runTool(name, args, bundle);
           } catch (e: any) {
             out = `工具执行失败：${String(e?.message || e).slice(0, 160)}`;
           }
         }
         toolResults.push({
           role: 'user',
-          content: [{ type: 'tool_result', tool_use_id: tu.id, content: out }],
+          content: [{ type: 'tool_result', tool_use_id: tu.id || `toolu_${round}_${ti}`, content: out }],
         });
+        ti += 1;
       }
       messages.push(...toolResults);
     }
