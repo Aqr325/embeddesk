@@ -203,3 +203,17 @@ smart-service-agent/
 | `ADMIN_PASSWORD` / `ADMIN_TOKEN_SECRET` | admin auth (set strong values in production) |
 
 > Leave the GCP block empty for fully local mock runs. Fill it to flip the entire stack to real Google Cloud — no code change required.
+
+---
+
+## 10. Submission artifacts (AI Builder Cup 2026)
+
+| Requirement | Artifact |
+|---|---|
+| Presentation (per template) | see `SUBMISSION.md` |
+| Demo video (actual run) | `embeddesk-demo.mp4` (95s, 1920×1080) |
+| Deployed live prototype | `DEPLOY_GCP.md` — Cloud Run one-command deploy |
+| Accessible GitHub repo | this repository (branch `hack2skill`) |
+| Brief description | `SUBMISSION.md` |
+
+The demo video is a real screen recording of the running system (web console + admin back-office + LLM call monitoring), produced by `scripts/record-demo-video.mjs` (Puppeteer + CDP screencast) and `scripts/encode-demo-video.mjs` (VFR-accurate ffmpeg encode). The model endpoint in the video is swappable: any OpenAI-compatible endpoint / Gemini / Vertex AI works via the admin "模型配置" page.

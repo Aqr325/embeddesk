@@ -11,6 +11,7 @@
  */
 import { callAgent } from './agentCore.js';
 import { getResolvedConfig } from './llmConfig.js';
+import { stripHandoffToken } from './handoff.js';
 import type { DbMessage } from './db.js';
 
 export type Sentiment = 'positive' | 'neutral' | 'negative' | 'angry';
@@ -117,8 +118,11 @@ export async function summarizeConversation(
     });
     const parsed = parseSummaryJson(res.text);
     if (parsed && parsed.summary) return parsed;
-    // 模型未返回合规 JSON：用其文本作为摘要回退
-    return { ...fallback(), summary: (res.text || '').slice(0, 500).trim() || fallback().summary };
+    // 模型未返回合规 JSON：用其文本作为摘要回退。
+    // 防御：剥离可能混入的转人工令牌——否则聊天型模型在非 JSON 回复中带上令牌时，
+    // 会把 "[[HANDOFF]]" 原文写进工单摘要（坐席端可见，属于展示层污染）。
+    const cleaned = stripHandoffToken(res.text || '').slice(0, 500).trim();
+    return { ...fallback(), summary: cleaned || fallback().summary };
   } catch {
     return fallback();
   }

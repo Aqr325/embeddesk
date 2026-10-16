@@ -34,3 +34,4 @@ stats.json
 
 # Vite 临时文件
 *.timestamp-*.mjs
+.video-demo/
