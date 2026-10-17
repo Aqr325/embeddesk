@@ -4,7 +4,7 @@
 > **仓库**：https://github.com/Aqr325/embeddesk （分支 `hack2skill`，**已转公开 ✅** `private:false`）
 > **实时原型**：`<Cloud Run URL — 本沙箱无 gcloud/凭证，需在本机执行 `gcloud run deploy` 后回填，详见 DEPLOY_GCP.md>`
 > **演示视频**：仓库内两支——`embeddesk-demo.mp4`（95s 真机全链路录制）+ `embeddesk_intro.mp4`（make-video 技能生成，53s，1920×1080，字幕烧录；沙箱无外网故人声配音降级、BGM 兜底）
-> **演示文稿**：`EmbedDesk-AI-Builder-Cup.pptx`（10 页，按 hack2skill 提交结构以 tencent-pptx 重建；平台模板仅在登录后 dashboard 提供，公开页无下载入口）
+> **演示文稿**：`EmbedDesk-AI-Builder-Cup.pptx`（🔴 已替换为**官方模板原位填充版**——16 页模板结构全保留，英文内容，第 9 页明确 Firebase/Firestore/Cloud Run/Gemini，第 14 页填仓库/视频/产品链接）
 
 ---
 
@@ -12,11 +12,27 @@
 
 | # | 赛事要求 | 状态 | 交付物 |
 |---|---|---|---|
-| 1 | 演示文稿（按规定模板） | ✅ 已完成 | `EmbedDesk-AI-Builder-Cup.pptx`（tencent-pptx 重建，10 页 + 4 张 SVG 主视觉） |
-| 2 | 演示视频（实际运行） | ✅ 已完成 | `embeddesk-demo.mp4`（95s 真机全链路）+ `embeddesk_intro.mp4`（53s make-video，字幕烧录，BGM 兜底） |
+| 1 | 演示文稿（按规定模板） | ✅ 已完成 | `EmbedDesk-AI-Builder-Cup.pptx`（**官方模板原位填充**，16 页结构保留，英文，含 Firebase/Firestore/Cloud Run/Gemini 与全部链接） |
+| 2 | 演示视频（实际运行） | 🔴 **不合规，须重做** | 现有两支（95s / 53s）均**短于 3 分钟**；规则要求 **3–4 分钟且清晰展示实际功能**——需真机录屏版（跑本地服务 + Playwright 驱动真实应用全流程） |
 | 3 | 已部署的实时原型链接 | 🟡 待本机部署 | 代码 100% 就绪；本沙箱无 gcloud/凭证，需在本机跑 `gcloud run deploy`（见 DEPLOY_GCP.md） |
 | 4 | 可访问的 GitHub 仓库 | ✅ 已完成 | 仓库已转公开（`private:false`），密钥扫描干净 |
 | 5 | 简要描述 | ✅ 已完成 | 本文档 |
+
+---
+
+## 〇-2. Brief Description (English — paste-ready for the submission form)
+
+I built **EmbedDesk**, an embeddable AI customer-service agent that turns any website into an intelligent, ticket-generating support surface with one line of code. A single `<script>` tag (Shadow DOM) drops a conversational widget into any site; the same agent core also serves email (IMAP+SMTP) and IM channels.
+
+**How I used Google Cloud:**
+
+- **Cloud Run** — hosts the full stack (React SPA frontend + Express API backend) as the deployed prototype; serverless, scale-to-zero, free tier.
+- **Gemini** — powers the agent core: a tool-use loop over `search_knowledge` / `query_order` / `get_customer` / `create_ticket`, RAG answering, conversation summarization and sentiment detection.
+- **Firestore (Firebase)** — the durable NoSQL layer storing the knowledge base, sessions, tickets and RAG vectors; Firebase Auth / Hosting are planned next-step integrations.
+- **Vertex AI Search** — semantic retrieval (RAG) over the knowledge base with re-ranking.
+- **BigQuery** — insights and analytics over ticket and conversation data.
+
+**Differentiators:** deterministic human handoff (`HANDOFF_TOKEN`), knowledge-gap detection, automatic priority/SLA escalation, agent Copilot, and full LLM call observability — verified by 9 automated suites, all green.
 
 ---
 

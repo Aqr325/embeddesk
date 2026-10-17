@@ -25,17 +25,17 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 
 ---
 
-## 路线 A：最快出活链接（推荐，一条命令）
+## 路线 A：零成本部署（推荐，一条命令）
 
-源码直部署——Cloud Build 在云端构建，**无需本地 Docker**：
+源码直部署——Cloud Build 在云端构建，**无需本地 Docker**，且**零流量零费用**（默认缩容到零，无访问不计费，免费额度内基本不花钱）：
 
 ```bat
-gcloud run deploy embeddesk --source . --region asia-east1 --allow-unauthenticated --min-instances 1 --set-env-vars ADMIN_PASSWORD=<设置一个强口令>
+gcloud run deploy embeddesk --source . --region asia-east1 --allow-unauthenticated --set-env-vars ADMIN_PASSWORD=<设置一个强口令>
 ```
 
 - 首次执行会问「Allow unauthenticated invocations?」→ 选 **y**（评委需要公开访问）。
 - 构建约 3–6 分钟，完成后打印服务 URL，形如 `https://embeddesk-xxxxx-uc.a.run.app`。
-- `--min-instances 1`：评估期间防冷启动，链接随时可用。
+- **不加 `--min-instances` 即默认 0**：无访问时不计费；代价是首次访问有数秒冷启动（评委第一次打开稍慢，之后正常）。评估结束直接删服务即可彻底归零。
 
 部署后自检：
 
