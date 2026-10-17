@@ -1,10 +1,10 @@
 # EmbedDesk · AI Builder Cup 2026 提交简述
 
 > **赛道**：Future of Work & Enterprise Productivity
-> **仓库**：https://github.com/Aqr325/embeddesk （默认分支 `hack2skill`，提交前需转公开）
-> **实时原型**：`<Cloud Run URL，部署后回填>`
-> **演示视频**：`embeddesk-demo.mp4`（仓库内，95 秒，1920×1080，已随本仓库提交；平台如要求外链可上传后回填链接）
-> **演示文稿**：`<PPT 链接/文件，按平台模板制作后回填>`
+> **仓库**：https://github.com/Aqr325/embeddesk （分支 `hack2skill`，**已转公开 ✅** `private:false`）
+> **实时原型**：`<Cloud Run URL — 本沙箱无 gcloud/凭证，需在本机执行 `gcloud run deploy` 后回填，详见 DEPLOY_GCP.md>`
+> **演示视频**：仓库内两支——`embeddesk-demo.mp4`（95s 真机全链路录制）+ `embeddesk_intro.mp4`（make-video 技能生成，53s，1920×1080，字幕烧录；沙箱无外网故人声配音降级、BGM 兜底）
+> **演示文稿**：`EmbedDesk-AI-Builder-Cup.pptx`（10 页，按 hack2skill 提交结构以 tencent-pptx 重建；平台模板仅在登录后 dashboard 提供，公开页无下载入口）
 
 ---
 
@@ -12,10 +12,10 @@
 
 | # | 赛事要求 | 状态 | 交付物 |
 |---|---|---|---|
-| 1 | 演示文稿（按规定模板） | 🟡 待模板 | 平台模板下载后按样版式（tencent-pptx） |
-| 2 | 演示视频（实际运行） | ✅ 已完成 | `embeddesk-demo.mp4` |
-| 3 | 已部署的实时原型链接 | 🟡 待执行 | `DEPLOY_GCP.md`（Cloud Run 一键部署手册） |
-| 4 | 可访问的 GitHub 仓库 | 🟡 待转公开 | 仓库已就绪，密钥扫描干净，确认后执行 |
+| 1 | 演示文稿（按规定模板） | ✅ 已完成 | `EmbedDesk-AI-Builder-Cup.pptx`（tencent-pptx 重建，10 页 + 4 张 SVG 主视觉） |
+| 2 | 演示视频（实际运行） | ✅ 已完成 | `embeddesk-demo.mp4`（95s 真机全链路）+ `embeddesk_intro.mp4`（53s make-video，字幕烧录，BGM 兜底） |
+| 3 | 已部署的实时原型链接 | 🟡 待本机部署 | 代码 100% 就绪；本沙箱无 gcloud/凭证，需在本机跑 `gcloud run deploy`（见 DEPLOY_GCP.md） |
+| 4 | 可访问的 GitHub 仓库 | ✅ 已完成 | 仓库已转公开（`private:false`），密钥扫描干净 |
 | 5 | 简要描述 | ✅ 已完成 | 本文档 |
 
 ---
