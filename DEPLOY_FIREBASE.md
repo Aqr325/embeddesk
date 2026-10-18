@@ -103,6 +103,8 @@ firebase deploy
 | 现象 | 原因 / 解法 |
 |---|---|
 | `firebase deploy` 提示需要 Blaze/绑卡 | 见第 0 步——Spark 不能部署 Functions，这是 Google 规则不是本项目问题 |
+| `npm ci` 报 `EALLOWREMOTE` / `Refusing to fetch ...@https://registry.npmmirror.com/...` | lockfile 曾混入淘宝镜像地址，Cloud Shell 的 npm 11 拒绝抓取非官方源 tarball——已于 2026-10-18 将全部 595 个 resolved 改写为 `registry.npmjs.org`；若再现，先 `git pull` 再重试 |
+| `sh: 1: tsc: command not found` | 同上——`npm ci` 失败导致 devDependencies（typescript）未安装，修好 lockfile 后重跑即恢复 |
 | 绑卡被拒（卡不支持） | 走路线 B（队友建项目加你为 Owner）或路线 C（Render） |
 | 首次访问慢 3–5 秒 | 函数缩容到零的正常冷启动；演示期间连续访问即热 |
 | 工单/会话数据"没了" | SQLite 位于 /tmp，函数实例回收后重建并自动种子（SEED_DEMO 默认开）——功能演示无影响，非缺陷 |
