@@ -21,7 +21,7 @@ export function SurveyPage() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`/api/csat/survey/${encodeURIComponent(token)}`);
+        const res = await fetch(API_BASE + `/api/csat/survey/${encodeURIComponent(token)}`);
         if (!res.ok) {
           if (alive) setStatus('notfound');
           return;

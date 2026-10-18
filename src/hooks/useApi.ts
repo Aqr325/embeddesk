@@ -27,9 +27,11 @@ import type {
  * - 默认相对路径（同源部署：Cloud Run / Firebase Functions / 本地）
  * - 设 VITE_API_BASE 后走绝对地址（混合部署：Firebase Hosting 前端 + Render API，
  *   本地 dev 经 vite.config.ts 的 proxy 保持相对路径不变）
+ * VITE_API_BASE 允许带或不带 `/api` 后缀，统一归一化为「源地址 + /api」，
+ * 与 src/lib/apiBase.ts（调用方自拼 /api/...）对齐——2026-10-18 修复双 /api 问题。
  */
 const RAW_BASE: string = (import.meta.env.VITE_API_BASE as string) || '/api';
-const BASE = RAW_BASE.replace(/\/+$/, '');
+const BASE = (RAW_BASE.replace(/\/+$/, '').replace(/\/api$/, '') || '') + '/api';
 const TOKEN_KEY = 'csa_admin_token';
 
 function getToken(): string | null {

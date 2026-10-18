@@ -63,6 +63,7 @@ git pull 2>/dev/null || git fetch && git reset --hard origin/hack2skill
 
 # 2) 安装依赖 + 构建前端（VITE_API_BASE 指向第 1 步拿到的 Render URL）
 #    ⚠️ 把下面的 embeddesk-api.onrender.com 换成你的实际 Render URL
+#    注：VITE_API_BASE 带或不带 /api 后缀均可（前端已做归一化，不会出现 /api/api 双前缀）
 export VITE_API_BASE="https://embeddesk-api.onrender.com/api"
 npm ci
 npm run build

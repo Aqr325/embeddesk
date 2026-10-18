@@ -20,9 +20,11 @@
   var TOKEN = (script && script.getAttribute('data-token')) || '';
   var COLOR = (script && script.getAttribute('data-color')) || '#1e3a8a';
   var TITLE = (script && script.getAttribute('data-title')) || '在线客服';
-  var SERVER = (script && script.getAttribute('data-server')) ||
+  /* SERVER 归一化为「不含 /api 的源地址」：data-server / window.EMBEDDESK_API_SERVER
+     允许带或不带 /api 后缀（与前端 VITE_API_BASE 两种传法兼容），请求时自拼 /api/... */
+  var SERVER = ((script && script.getAttribute('data-server')) ||
     window.EMBEDDESK_API_SERVER ||
-    (script ? new URL(script.src).origin : '');
+    (script ? new URL(script.src).origin : '')).replace(/\/+$/, '').replace(/\/api$/, '');
 
   if (!SITE_ID || !TOKEN) {
     if (window.console) console.warn('[embed.js] 缺少 data-site-id 或 data-token，客服窗口未初始化');
