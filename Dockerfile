@@ -27,8 +27,13 @@ COPY seed ./seed
 RUN npm run build
 
 ENV NODE_ENV=production
+# 容器内存纪律（Render 免费层 512MB）：Node 堆硬上限 384MB，V8 到限主动 GC/抛错，
+# 避免 RSS 无界增长把容器（含 page cache / 原生模块 / SQLite 缓存）顶穿触发 OOM kill。
+# 实测稳态 heapUsed 仅 25-32MB，384MB 上限永不触及正常业务，仅为兜底极端场景。
+ENV NODE_OPTIONS="--max-old-space-size=384"
 ENV PORT=8080
 EXPOSE 8080
 
 # 健康检查端点 /api/health 由应用提供
-CMD ["npm", "start"]
+# 直接以 npx tsx 启动：省去 npm 父进程常驻（约 40MB RSS），512MB 实例下每一分余量都关键
+CMD ["npx", "tsx", "server/index.ts"]

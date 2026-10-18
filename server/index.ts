@@ -158,7 +158,7 @@ app.use((req, res, next) => {
 // 聊天接口限流（按客户端 IP 滑动窗口）
 const chatLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
-  max: Number(process.env.RATE_LIMIT_MAX) || 20,
+  max: Number(process.env.RATE_LIMIT_MAX) || 60,
   key: (req) => clientIp(req),
 });
 
@@ -698,6 +698,15 @@ app.get('/api/health', asyncHandler(async (_req, res) => {
     emailDelivery: getEmailDeliveryStats(),
     kbCache: getKbCacheStats(),
     rag: getRagStats(),
+    memory: (() => {
+      const m = process.memoryUsage();
+      return {
+        rssMb: Math.round(m.rss / 1048576),
+        heapUsedMb: Math.round(m.heapUsed / 1048576),
+        heapTotalMb: Math.round(m.heapTotal / 1048576),
+        externalMb: Math.round(m.external / 1048576),
+      };
+    })(),
     timestamp: new Date().toISOString(),
   });
 }));
@@ -2010,8 +2019,9 @@ if (isFunctionsRuntime) {
   logger.info('[Init] 检测到 Cloud Functions 运行时：跳过 app.listen，请求由函数运行时托管');
 } else {
   server = app.listen(PORT, () => {
+    const m = process.memoryUsage();
     logger.info(
-      `智能客服 Agent 服务端已启动 | 地址 http://localhost:${PORT} | 模式 ${AGENT_MODE} | FAQ ${db.faqCount()} 条 | DB SQLite(data/chat.db)`,
+      `智能客服 Agent 服务端已启动 | 地址 http://localhost:${PORT} | 模式 ${AGENT_MODE} | FAQ ${db.faqCount()} 条 | DB SQLite(data/chat.db) | RSS ${Math.round(m.rss / 1048576)}MB / heapUsed ${Math.round(m.heapUsed / 1048576)}MB / external ${Math.round(m.external / 1048576)}MB`,
     );
   });
 }

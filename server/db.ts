@@ -35,6 +35,10 @@ db.pragma('synchronous = NORMAL');
 // 16MB 页缓存 + 临时表/索引落内存，提升统计聚合查询吞吐
 db.pragma('cache_size = -16000');
 db.pragma('temp_store = MEMORY');
+// WAL 文件封顶 + 更频 checkpoint：限制 -wal 文件与 page cache 增长（容器内存受限场景，
+// 防止 cgroup 统计口径下 -wal 页缓存叠加击穿 512MB 实例上限触发 OOM kill）
+db.pragma('wal_autocheckpoint = 256');
+db.pragma('journal_size_limit = 33554432');
 
 db.exec(`
   -- ============ 会话表 ============
