@@ -1,0 +1,22 @@
+# .firebaseignore —— 控制 firebase deploy 的上传内容（gitignore 语法）
+# 注意与 .dockerignore/.gcloudignore 的策略差异：
+#   - node_modules **不排除**：Cloud Shell（Linux）里 npm ci 的 better-sqlite3 原生二进制
+#     必须原样上传，函数运行时才能 require 成功（构建机编译不可靠，故不用云端构建）
+#   - data/products/** 保留：knowledge.ts 以 fs 读取 catalog.json 做知识库种子（bundle 无法内联）
+#   - *.db 排除：演示库留在本地，函数环境用 /tmp/embeddesk.db 冷启动重建 + 自动种子
+.git
+.video-live
+.video-demo
+vidcap_shots
+work
+frames
+*.mp4
+*.mp3
+*.wav
+*.m4a
+*.pptx
+*.db
+*.log
+.cache
+.temp
+server.log

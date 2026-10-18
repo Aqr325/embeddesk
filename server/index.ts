@@ -1999,18 +1999,29 @@ preloadSessionRegistry();
 // 启动邮件网关（未配置 EMAIL_ENABLED 时自动禁用，零副作用）
 startEmailGateway();
 
-const server = app.listen(PORT, () => {
-  logger.info(
-    `智能客服 Agent 服务端已启动 | 地址 http://localhost:${PORT} | 模式 ${AGENT_MODE} | FAQ ${db.faqCount()} 条 | DB SQLite(data/chat.db)`,
-  );
-  probeSdk();
-  void confirmSdk();
-});
+// Firebase Cloud Functions 模式判定：函数运行时自动注入 FUNCTION_TARGET / FIREBASE_CONFIG。
+// 函数模式下跳过 app.listen——Express app 改由 server/functions.ts 以 onRequest 托管，
+// 实现「同一套代码双部署」：本地/Cloud Run 走 listen，Firebase Spark 走函数（免绑卡）。
+// 详见 DEPLOY_FIREBASE.md。
+const isFunctionsRuntime = Boolean(process.env.FUNCTION_TARGET || process.env.FIREBASE_CONFIG);
+let server: import('http').Server | null = null;
+
+if (isFunctionsRuntime) {
+  logger.info('[Init] 检测到 Cloud Functions 运行时：跳过 app.listen，请求由函数运行时托管');
+} else {
+  server = app.listen(PORT, () => {
+    logger.info(
+      `智能客服 Agent 服务端已启动 | 地址 http://localhost:${PORT} | 模式 ${AGENT_MODE} | FAQ ${db.faqCount()} 条 | DB SQLite(data/chat.db)`,
+    );
+  });
+}
+probeSdk();
+void confirmSdk();
 
 /* ============================ 优雅退出 ============================ */
 function shutdown(signal: string) {
   logger.info(`收到 ${signal}，开始优雅关闭…`);
-  server.close(async () => {
+  server?.close(async () => {
     // 先停邮件网关轮询，避免关闭期间再向写入队列投递
     try {
       stopEmailGateway();
@@ -2037,3 +2048,6 @@ function shutdown(signal: string) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// 供 Firebase Cloud Functions 入口（server/functions.ts）以 onRequest(app) 方式托管
+export default app;

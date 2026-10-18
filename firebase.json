@@ -1,0 +1,35 @@
+{
+  "functions": {
+    "source": ".",
+    "runtime": "nodejs20",
+    "ignore": [
+      "*.log",
+      ".git",
+      ".firebase",
+      ".video-live",
+      ".video-demo",
+      "vidcap_shots",
+      "*.mp4",
+      "*.mp3",
+      "*.m4a",
+      "*.pptx",
+      "*.db",
+      ".cache",
+      ".temp"
+    ]
+  },
+  "hosting": {
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "/api/**", "function": "api" },
+      { "source": "**", "destination": "/index.html" }
+    ],
+    "headers": [
+      {
+        "source": "/embed.js",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=300" }]
+      }
+    ]
+  }
+}
