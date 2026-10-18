@@ -28,6 +28,7 @@
 
 **路线 A：用自己的卡试一下（约 2 分钟就知道行不行）**
 项目已在你账号下 → 直接 https://console.firebase.google.com/project/embeddesk/usage/details → 左下角「Spark」旁「升级」→ 选 Blaze →「创建计费账户」→ 填卡。国内很多**双币储蓄卡（Visa/Mastercard 借记卡）**可以直接过；纯银联卡可能被拒。被拒就删掉计费信息，项目仍在、零费用，直接走路线 B。
+> ⚠️ **若升级时弹出「One-time prepayment required / 需要一次性预付 $30」**：说明该卡被 Google 风控标记（典型为虚拟卡、预付卡、或账单姓名与 Google 账号本人不一致的卡）——**正常个人信用卡不会触发此要求**。$30 是「预存」不是手续费：计入账户余额可消费、关闭计费账户可退；但姓名不一致的卡在评估期有被暂停计费 → 函数被停 → 原型链接失效的连锁风险。追求零成本+低风险就走路线 B（队友实名卡）。
 
 **路线 B：有卡的队友建计费账户，你关联升级（队长无卡的标准解法；项目无需重建）**
 1. ANKIT 打开 https://console.cloud.google.com/billing →「创建账户」→ 起名 `EmbedDesk-Billing` → 填他的卡（被拒就换一张双币卡）
@@ -111,6 +112,7 @@ firebase deploy
 | `firebase deploy` 提示需要 Blaze/绑卡 | 见第 0 步——Spark 不能部署 Functions，这是 Google 规则不是本项目问题 |
 | `npm ci` 报 `EALLOWREMOTE` / `Refusing to fetch ...@https://registry.npmmirror.com/...` | lockfile 曾混入淘宝镜像地址，Cloud Shell 的 npm 11 拒绝抓取非官方源 tarball——已于 2026-10-18 将全部 595 个 resolved 改写为 `registry.npmjs.org`；若再现，先 `git pull` 再重试 |
 | `sh: 1: tsc: command not found` | 同上——`npm ci` 失败导致 devDependencies（typescript）未安装，修好 lockfile 后重跑即恢复 |
+| 升级时要求「$30 one-time prepayment」才能激活 | 该支付方式被 Google 风控标记（虚拟卡/预付卡/账单姓名非本人）——正常个人信用卡无此要求。预付款可退（关闭计费账户），但非本人卡有评估期被停风险；零成本正路是路线 B 用队友实名信用卡 |
 | 绑卡被拒（卡不支持） | 删掉计费信息（项目无损、零费用）→ 走路线 B（ANKIT 建计费账户加你为 Billing Account User）或 B-2（加 ANKIT 为 Owner 让他部署）；都不可行才用路线 C（Render） |
 | 首次访问慢 3–5 秒 | 函数缩容到零的正常冷启动；演示期间连续访问即热 |
 | 工单/会话数据"没了" | SQLite 位于 /tmp，函数实例回收后重建并自动种子（SEED_DEMO 默认开）——功能演示无影响，非缺陷 |
