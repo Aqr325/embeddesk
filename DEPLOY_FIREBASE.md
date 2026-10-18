@@ -27,13 +27,19 @@
 ### 绑卡三条路（按推荐顺序，任选其一）
 
 **路线 A：用自己的卡试一下（约 2 分钟就知道行不行）**
-创建项目后按提示升级 Blaze → 填卡。国内很多**双币储蓄卡（Visa/Mastercard 借记卡）**可以直接过；
-纯银联卡可能被拒。被拒就删掉计费信息，项目仍在，不产生任何费用，直接走路线 B。
+项目已在你账号下 → 直接 https://console.firebase.google.com/project/embeddesk/usage/details → 左下角「Spark」旁「升级」→ 选 Blaze →「创建计费账户」→ 填卡。国内很多**双币储蓄卡（Visa/Mastercard 借记卡）**可以直接过；纯银联卡可能被拒。被拒就删掉计费信息，项目仍在、零费用，直接走路线 B。
 
-**路线 B：队友建项目，你当 Owner 部署（队长无卡的标准解法）**
-1. 让**有卡的队友**（ANKIT）打开 https://console.firebase.google.com/ 添加项目 `embeddesk`（或 `embeddesk-团队后缀`），并完成 Blaze 升级
-2. 队友进「项目设置 → 用户和权限」：添加成员 → 填**你的 Gmail** → 角色选 **Owner** → 保存
-3. 你用同一个 Gmail 在 Cloud Shell 里 `firebase login`，即可部署（提交时队长仍是你）
+**路线 B：有卡的队友建计费账户，你关联升级（队长无卡的标准解法；项目无需重建）**
+1. ANKIT 打开 https://console.cloud.google.com/billing →「创建账户」→ 起名 `EmbedDesk-Billing` → 填他的卡（被拒就换一张双币卡）
+2. ANKIT 在该计费账户页 →「账户管理 / Account Management」→「添加成员」→ 填 `xinghuiwan1@gmail.com` → 角色选 **Billing Account User** → 保存
+3. 你打开 https://console.firebase.google.com/project/embeddesk/usage/details → 左下角「升级」→ 选 Blaze → 计费账户列表里选中 ANKIT 的 `EmbedDesk-Billing`（你已是其 User）→ 确认
+4. 回 Cloud Shell 原样重跑 `firebase deploy`（项目 ID 不变、代码不动、数据不动）
+
+**路线 B-2（变体）：让队友全程部署，你只收 URL**
+1. 你在 https://console.firebase.google.com/project/embeddesk/settings/iam →「添加成员」→ 填 ANKIT 的 Gmail → 角色 **Owner** → 保存
+2. ANKIT 用他的 Gmail 登录 Firebase 控制台 → 对 embeddesk 项目左下角升级 Blaze（他的卡）
+3. ANKIT 打开 https://shell.cloud.google.com/ → 执行第 2 步的完整部署命令（全新 clone）
+4. ANKIT 把 `https://embeddesk.web.app` 发给你 → 你回填表单（队长署名仍是你）
 
 **路线 C：全程无卡（保底，非 Google 栈）**
 仓库已带 `Dockerfile`，可部署到 Render 免费层（无需绑卡，5 分钟，功能完整）。
@@ -105,7 +111,7 @@ firebase deploy
 | `firebase deploy` 提示需要 Blaze/绑卡 | 见第 0 步——Spark 不能部署 Functions，这是 Google 规则不是本项目问题 |
 | `npm ci` 报 `EALLOWREMOTE` / `Refusing to fetch ...@https://registry.npmmirror.com/...` | lockfile 曾混入淘宝镜像地址，Cloud Shell 的 npm 11 拒绝抓取非官方源 tarball——已于 2026-10-18 将全部 595 个 resolved 改写为 `registry.npmjs.org`；若再现，先 `git pull` 再重试 |
 | `sh: 1: tsc: command not found` | 同上——`npm ci` 失败导致 devDependencies（typescript）未安装，修好 lockfile 后重跑即恢复 |
-| 绑卡被拒（卡不支持） | 走路线 B（队友建项目加你为 Owner）或路线 C（Render） |
+| 绑卡被拒（卡不支持） | 删掉计费信息（项目无损、零费用）→ 走路线 B（ANKIT 建计费账户加你为 Billing Account User）或 B-2（加 ANKIT 为 Owner 让他部署）；都不可行才用路线 C（Render） |
 | 首次访问慢 3–5 秒 | 函数缩容到零的正常冷启动；演示期间连续访问即热 |
 | 工单/会话数据"没了" | SQLite 位于 /tmp，函数实例回收后重建并自动种子（SEED_DEMO 默认开）——功能演示无影响，非缺陷 |
 | 想切真实 GCP 栈（Gemini/Vertex/Firestore/BigQuery） | 在 Blaze 上直接可用，配好环境变量即可，无需改码 |
