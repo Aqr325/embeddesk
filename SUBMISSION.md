@@ -3,7 +3,7 @@
 > **赛道**：Future of Work & Enterprise Productivity
 > **仓库**：https://github.com/Aqr325/embeddesk （分支 `hack2skill`，**已转公开 ✅** `private:false`）
 > **实时原型**：`<Cloud Run URL — 本沙箱无 gcloud/凭证，需在本机执行 `gcloud run deploy` 后回填，详见 DEPLOY_GCP.md>`
-> **演示视频**：`embeddesk-demo.mp4`（**3 分 29 秒 / 209s，1920×1080，已合规**）——本地启动真实服务（Express 8912 + Vite 5891 + SQLite 知识库），Playwright 无头 Chrome 驱动真实交互全程真机录制：widget 两轮产品问答 → 管理后台仪表盘 / 对话记录 / 工单 / 知识库 / 知识盲区 / AI 成效 / 模型配置七页实走；场景对位解说 + 烧录字幕 + BGM。另备 `embeddesk_intro.mp4`（make-video 技能生成，53s）作补充
+> **演示视频**：`embeddesk-demo.mp4`（**3 分 29 秒 / 209s，1920×1080，已合规**）——本地启动真实服务（Express 8912 + Vite 5891 + SQLite 知识库），Playwright 无头 Chrome 驱动真实交互全程真机录制：widget 两轮产品问答 → 管理后台仪表盘 / 对话记录 / 工单 / 知识库 / 知识盲区 / AI 成效 / 模型配置七页实走；解说按配音逐句显示（不遮挡画面）+ 烧录字幕 + BGM。另备 `embeddesk_intro.mp4`（make-video 技能生成，53s）作补充
 > **演示文稿**：`EmbedDesk-AI-Builder-Cup.pptx`（🔴 已替换为**官方模板原位填充版**——16 页模板结构全保留，英文内容，第 9 页明确 Firebase/Firestore/Cloud Run/Gemini，第 14 页填仓库/视频/产品链接）
 
 ---
