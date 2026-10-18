@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const OUT_DIR = path.join(ROOT, '.video-demo');
+const OUT_DIR = path.join(ROOT, '.video-live');
 const FRAMES = path.join(OUT_DIR, 'frames');
 const TS_FILE = path.join(OUT_DIR, 'frame-ts.json');
 const OUTPUT = process.argv[2] || path.join(ROOT, 'embeddesk-demo.mp4');
