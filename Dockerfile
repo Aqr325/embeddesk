@@ -32,6 +32,16 @@ ENV NODE_ENV=production
 # 实测稳态 heapUsed 仅 25-32MB，384MB 上限永不触及正常业务，仅为兜底极端场景。
 ENV NODE_OPTIONS="--max-old-space-size=384"
 ENV PORT=8080
+
+# 容器内默认不启用交互式 CLI 引擎。
+# SDK 探测与生成会拉起独立 CLI 子进程（数百 MB 级），与 npm + tsx + 主进程叠加后
+# 会击穿 512MB 容器（Render 免费层）的 cgroup 上限，表现为「启动后约 90 秒 OOM
+# 重启」的崩溃循环 —— 主进程 RSS 死时仅 52MB，故从堆内存看不出问题。
+# 容器环境应走凭证驱动引擎（均为进程内 HTTP，无子进程）：
+#   GEMINI_API_KEY（Gemini 直连）或 自定义协议端点（OpenAI/Anthropic/兼容协议）。
+# 需要在容器内使用 CLI 时，显式设置 AGENT_MODE=auto 覆盖本默认值。
+ENV AGENT_MODE=local
+
 EXPOSE 8080
 
 # 健康检查端点 /api/health 由应用提供
