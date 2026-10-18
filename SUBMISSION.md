@@ -22,17 +22,17 @@
 
 ## 〇-2. Brief Description (English — paste-ready for the submission form)
 
-I built **EmbedDesk**, an embeddable AI customer-service agent that turns any website into an intelligent, ticket-generating support surface with one line of code. A single `<script>` tag (Shadow DOM) drops a conversational widget into any site; the same agent core also serves email (IMAP+SMTP) and IM channels.
+> **表单上限 1024 字符 → 本版 1022 字符（实测通过，直接整段粘贴）**。以下为表单粘贴版；完整长文见「三、结构化完整版」。
 
-**How I used Google Cloud:**
+I built EmbedDesk, an embeddable AI customer-service agent that embeds into any website with one line of code. A single `<script>` tag (Shadow DOM) mounts a widget; the same agent core serves email (IMAP+SMTP) and IM, and files support tickets automatically.
 
-- **Google Cloud serverless (Cloud Run / Firebase Cloud Functions)** — hosts the full stack (React SPA frontend + Express API backend) as the deployed prototype; the same code runs in both modes, and the submitted prototype runs on Firebase; serverless, scale-to-zero, free tier.
-- **Gemini** — powers the agent core: a tool-use loop over `search_knowledge` / `query_order` / `get_customer` / `create_ticket`, RAG answering, conversation summarization and sentiment detection.
-- **Firestore (Firebase)** — the durable NoSQL layer storing the knowledge base, sessions, tickets and RAG vectors; Firebase Auth / Hosting are planned next-step integrations.
-- **Vertex AI Search** — semantic retrieval (RAG) over the knowledge base with re-ranking.
-- **BigQuery** — insights and analytics over ticket and conversation data.
+Google services used:
+- **Firebase Cloud Functions** host the full stack (React SPA + Express API) as the deployed prototype; the same code also runs on **Cloud Run** — one serverless codebase, dual-mode.
+- **Gemini** powers the agent core: tool-use loop (`search_knowledge` / `query_order` / `get_customer` / `create_ticket`), RAG answering, summarization, sentiment.
+- **Firestore** stores the knowledge base, sessions, tickets and RAG vectors; **Vertex AI Search** adds semantic retrieval.
+- **BigQuery** runs insights over ticket and conversation data.
 
-**Differentiators:** deterministic human handoff (`HANDOFF_TOKEN`), knowledge-gap detection, automatic priority/SLA escalation, agent Copilot, and full LLM call observability — verified by 9 automated suites, all green.
+Differentiators: deterministic human handoff (`HANDOFF_TOKEN`), knowledge-gap detection, auto priority/SLA escalation, agent Copilot, LLM observability — 9 test suites green. All services are env-gated; zero-credential demos use local SQLite + lexical RAG.
 
 ---
 
