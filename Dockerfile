@@ -35,5 +35,7 @@ ENV PORT=8080
 EXPOSE 8080
 
 # 健康检查端点 /api/health 由应用提供
-# 直接以 npx tsx 启动：省去 npm 父进程常驻（约 40MB RSS），512MB 实例下每一分余量都关键
-CMD ["npx", "tsx", "server/index.ts"]
+# 经 npm start 启动（生产验证稳定：连续运行 35 分钟无异常；曾试过 CMD 直启
+# npx tsx 触发容器内启动约 20s 即崩溃的循环，已回退）。NODE_OPTIONS 堆上限
+# 见上方 ENV，与启动方式无关。
+CMD ["npm", "start"]

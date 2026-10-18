@@ -2028,6 +2028,28 @@ if (isFunctionsRuntime) {
 probeSdk();
 void confirmSdk();
 
+/* ============================ 进程级崩溃取证（容器排障专用） ============================ */
+// 背景：Render 免费层实例出现过「启动约 20 秒后进程消失并自动重启」的崩溃循环，
+// 本地（含 NODE_ENV=production）无法复现。容器内任何静默死亡都必须在 Render 日志
+// 留下现场，否则平台侧只剩一句 "service exited"，无从定位。
+// Node 15+ 默认 unhandledRejection=throw：未处理的 promise rejection 会直接杀死进程，
+// 这是容器环境「莫名重启」的头号元凶——此处捕获、记录堆栈与内存快照后按语义退出。
+function fatalSnapshot(why: string, detail: string): void {
+  const m = process.memoryUsage();
+  logger.error(
+    `[fatal] ${why} | uptime=${Math.round(process.uptime())}s rss=${Math.round(m.rss / 1048576)}MB heapUsed=${Math.round(m.heapUsed / 1048576)}MB | ${detail}`,
+  );
+}
+process.on('uncaughtException', (err) => {
+  fatalSnapshot('uncaughtException', String(err?.stack || err).slice(0, 800));
+  setTimeout(() => process.exit(1), 50); // 留出管道 flush 时间
+});
+process.on('unhandledRejection', (reason) => {
+  const detail = reason instanceof Error ? reason.stack || reason.message : String(reason);
+  fatalSnapshot('unhandledRejection', detail.slice(0, 800));
+  setTimeout(() => process.exit(1), 50);
+});
+
 /* ============================ 优雅退出 ============================ */
 function shutdown(signal: string) {
   logger.info(`收到 ${signal}，开始优雅关闭…`);
