@@ -1,26 +1,55 @@
-# EmbedDesk · Firebase 免绑卡部署指南（Spark 免费计划）
+# EmbedDesk · Firebase 部署指南（Hosting + Cloud Functions）
 
 > **赛事规则原文**：「通过 Cloud Run **或 Firebase** 部署在 Google Cloud 上」。
-> 本路线为 **Firebase Spark 免费计划**——**不需要信用卡**，与 Cloud Run 路线（`DEPLOY_GCP.md`）
-> 共用同一套服务端代码，零逻辑分叉。
->
-> **为什么 Spark 就够用**：应用在无云凭证时自动运行在「本地 SQLite + 词法 RAG」模式
-> （`server/functions-env.ts` 将数据库指向 `/tmp/embeddesk.db`，冷启动自动种子），
-> 零出站流量——正好绕开 Spark 计划「出站网络需升级 Blaze」的唯一限制，演示功能完整。
+> 本路线为 **Firebase**——与 Cloud Run 路线（`DEPLOY_GCP.md`）共用同一套服务端代码，零逻辑分叉。
 >
 > **全流程在 Cloud Shell（浏览器内 Linux 环境）完成**：免安装、自带 Node 20，
 > 且 `npm ci` 会拉取 Linux 版 better-sqlite3 原生二进制（与函数运行时匹配，关键！）。
 
 ---
 
-## 第 1 步：创建 Firebase 项目（浏览器，约 2 分钟）
+## ⚠️ 第 0 步（必读）：关于「绑卡」的真相
+
+**Firebase Spark（免费）计划不能部署 Cloud Functions**——这是 Google 2026 年的硬性规则，
+`firebase deploy` 到函数步骤会直接弹「需要升级 Blaze 计划」并中断。
+
+**Blaze ≠ 收费**：升 Blaze 只是绑定一个谷歌云计费账户做身份验证，**演示用量远在免费额度内，实际 $0**：
+
+| 项 | 免费额度（Blaze） | 本次演示预计用量 |
+|---|---|---|
+| 函数调用 | 200 万次/月 | < 1,000 次 |
+| 函数计算 | 400,000 GB·秒/月 | < 60 GB·秒 |
+| 出站流量 | 5 GB/月（Google 侧） | ≈ 0（无凭证模式零出站） |
+
+> 本应用在无云凭证时自动运行「本地 SQLite + 词法 RAG」模式（`server/functions-env.ts` 把数据库指向
+> `/tmp/embeddesk.db`，冷启动自动种子），**不调用任何外部 API**，不可能产生费用。
+
+### 绑卡三条路（按推荐顺序，任选其一）
+
+**路线 A：用自己的卡试一下（约 2 分钟就知道行不行）**
+创建项目后按提示升级 Blaze → 填卡。国内很多**双币储蓄卡（Visa/Mastercard 借记卡）**可以直接过；
+纯银联卡可能被拒。被拒就删掉计费信息，项目仍在，不产生任何费用，直接走路线 B。
+
+**路线 B：队友建项目，你当 Owner 部署（队长无卡的标准解法）**
+1. 让**有卡的队友**（ANKIT）打开 https://console.firebase.google.com/ 添加项目 `embeddesk`（或 `embeddesk-团队后缀`），并完成 Blaze 升级
+2. 队友进「项目设置 → 用户和权限」：添加成员 → 填**你的 Gmail** → 角色选 **Owner** → 保存
+3. 你用同一个 Gmail 在 Cloud Shell 里 `firebase login`，即可部署（提交时队长仍是你）
+
+**路线 C：全程无卡（保底，非 Google 栈）**
+仓库已带 `Dockerfile`，可部署到 Render 免费层（无需绑卡，5 分钟，功能完整）。
+代价：不满足「Cloud Run 或 Firebase」的赛事字面要求——**只在 A/B 都失败时使用**，并可在提交简述中说明原因。
+
+---
+
+## 第 1 步：创建 Firebase 项目（浏览器，约 3 分钟）
 
 1. 打开 https://console.firebase.google.com/ → 「添加项目」
-2. 项目名称填 `embeddesk` → 继续
-3. **遇到「升级到 Blaze 计划」提示 → 直接跳过/暂不升级**（Spark 免费计划完全支持本次部署）
-4. 项目创建后，左侧「构建」→「Functions」→ 首次进入若提示启用，点启用（免费）
+2. 项目名称填 `embeddesk` → 继续（记住生成的**项目 ID**，全局唯一；若 `embeddesk` 已被占用，用 `embeddesk-xxxxx` 形式）
+3. **遇到「升级到 Blaze 计划」提示 → 现在就升**（按上面第 0 步的路线 A 或 B 操作；免费额度内 $0）
+   - 建议顺手设预算保险：https://console.cloud.google.com/billing → 「预算和提醒」→ 建 $1/月的预算，超额仅发邮件不会自动扣费
+4. 项目创建后，左侧「构建」→「Functions」→ 首次进入若提示启用 API，点启用
 
-## 第 2 步：Cloud Shell 一键部署（约 8 分钟）
+## 第 2 步：Cloud Shell 部署（约 8 分钟）
 
 打开 https://shell.cloud.google.com/ （右上角确认已登录 Google 账号），依次粘贴：
 
@@ -42,7 +71,9 @@ firebase login --no-localhost
 # 5) 写入后台口令（.env 已被 .gitignore，不会入库；ADMIN_PASSWORD 必须设置，否则评委无法登录后台）
 echo "ADMIN_PASSWORD=EmbedDesk2026" > .env
 
-# 6) 部署（Hosting + Functions 一次性完成）
+# 6) 若你的项目 ID 不是 embeddesk，先关联：
+#    firebase use --add   （列表里选中你的项目，别名 default）
+# 7) 部署（Hosting + Functions 一次性完成）
 firebase deploy
 ```
 
@@ -50,8 +81,8 @@ firebase deploy
 
 | 地址 | 用途 |
 |---|---|
-| `https://embeddesk.web.app` | **提交用主链接**（Hosting：SPA + embed.js） |
-| `https://embeddesk.firebaseapp.com` | 备用（等价） |
+| `https://<项目ID>.web.app` | **提交用主链接**（Hosting：SPA + embed.js） |
+| `https://<项目ID>.firebaseapp.com` | 备用（等价） |
 
 `/api/**` 请求由 Hosting rewrite 到 Cloud Function（`api`），前端与 API 同源，无跨域问题。
 
@@ -59,22 +90,24 @@ firebase deploy
 
 | # | 检查 | 预期 |
 |---|---|---|
-| 1 | 开 `https://embeddesk.web.app/api/health` | 返回 `{"status":"ok",...}` |
-| 2 | 开 `https://embeddesk.web.app/` | 右下角出现聊天气泡 |
+| 1 | 开 `https://<项目ID>.web.app/api/health` | 返回 `{"status":"ok",...}` |
+| 2 | 开 `https://<项目ID>.web.app/` | 右下角出现聊天气泡 |
 | 3 | 发送「如何降低模组待机功耗？」或「哪款模组带 NPU，算力多少？」 | 有知识库回复（无凭证模式走本地 RAG，附产品引用） |
-| 4 | 开 `https://embeddesk.web.app/admin`，用 `EmbedDesk2026` 登录 | 能进后台；仪表盘 / 工单 / 调用监控有演示数据 |
-| 5 | 过 5 分钟再访问一次 | 正常（Spark 缩容到零，冷启动约 3–5 秒） |
+| 4 | 开 `https://<项目ID>.web.app/admin`，用 `EmbedDesk2026` 登录 | 能进后台；仪表盘 / 工单 / 调用监控有演示数据 |
+| 5 | 过 5 分钟再访问一次 | 正常（函数缩容到零，冷启动约 3–5 秒） |
 
-全部通过后：把 `https://embeddesk.web.app` 回填 H2S 提交页「部署原型链接」栏。
+全部通过后：把主链接回填 H2S 提交页「部署原型链接」栏。
 
 ## 常见问题
 
 | 现象 | 原因 / 解法 |
 |---|---|
-| 首次访问慢 3–5 秒 | Spark 缩容到零的正常冷启动；演示期间连续访问即热 |
+| `firebase deploy` 提示需要 Blaze/绑卡 | 见第 0 步——Spark 不能部署 Functions，这是 Google 规则不是本项目问题 |
+| 绑卡被拒（卡不支持） | 走路线 B（队友建项目加你为 Owner）或路线 C（Render） |
+| 首次访问慢 3–5 秒 | 函数缩容到零的正常冷启动；演示期间连续访问即热 |
 | 工单/会话数据"没了" | SQLite 位于 /tmp，函数实例回收后重建并自动种子（SEED_DEMO 默认开）——功能演示无影响，非缺陷 |
-| 想切真实 GCP 栈（Gemini/Vertex/Firestore/BigQuery） | Spark 不支持，需绑卡升 Blaze 或走 Cloud Run 路线（见 `DEPLOY_GCP.md`） |
-| `firebase deploy` 报 project 不存在 | `.firebaserc` 默认项目为 `embeddesk`；若你建的项目 ID 不同，执行 `firebase use --add` 选一下 |
+| 想切真实 GCP 栈（Gemini/Vertex/Firestore/BigQuery） | 在 Blaze 上直接可用，配好环境变量即可，无需改码 |
+| `firebase deploy` 报 project 不存在 | `.firebaserc` 默认项目为 `embeddesk`；项目 ID 不同则执行 `firebase use --add` 选一下 |
 | 部署后 404 | 确认第 3 步 `npm run build` 成功产出 `dist/`（Hosting public 目录） |
 
 ## 架构说明（与 Cloud Run 路线的关系）
@@ -82,7 +115,7 @@ firebase deploy
 ```
 同一份 server/ 代码
    ├── 本地 / Cloud Run：server/index.ts → app.listen(PORT)      （DEPLOY_GCP.md）
-   └── Firebase Spark  ：server/functions.ts → onRequest(app)     （本文件）
+   └── Firebase         ：server/functions.ts → onRequest(app)     （本文件）
                             ↑ functions-env.ts 预置 CSA_DB_PATH=/tmp/embeddesk.db
                             ↑ esbuild bundle 为单文件 CJS（Cloud Functions 无法直跑 TS）
 ```
