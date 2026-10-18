@@ -22,17 +22,17 @@
 
 ## 〇-2. Brief Description (English — paste-ready for the submission form)
 
-> **表单上限 1024 字符 → 本版 1022 字符（实测通过，直接整段粘贴）**。以下为表单粘贴版；完整长文见「三、结构化完整版」。
+> **表单上限 1024 字符 → 本版 985 字符**（留 39 余量吸收聊天复制损耗；1022 版实测粘贴后变 1038 被截断，勿用）。以下为表单粘贴版；完整长文见「三、结构化完整版」。
 
-I built EmbedDesk, an embeddable AI customer-service agent that embeds into any website with one line of code. A single `<script>` tag (Shadow DOM) mounts a widget; the same agent core serves email (IMAP+SMTP) and IM, and files support tickets automatically.
+I built EmbedDesk, an embeddable AI customer-service agent that embeds into any website with one line of code. A single `<script>` tag (Shadow DOM) mounts a widget; the same agent core serves email (IMAP+SMTP) and IM and files tickets automatically.
 
 Google services used:
-- **Firebase Cloud Functions** host the full stack (React SPA + Express API) as the deployed prototype; the same code also runs on **Cloud Run** — one serverless codebase, dual-mode.
-- **Gemini** powers the agent core: tool-use loop (`search_knowledge` / `query_order` / `get_customer` / `create_ticket`), RAG answering, summarization, sentiment.
+- **Firebase Cloud Functions** host the full stack (React SPA + Express API) as the deployed prototype; the same code also runs on **Cloud Run**, one serverless codebase.
+- **Gemini** powers the agent core: tool-use loop (`search_knowledge` / `query_order` / `get_customer` / `create_ticket`), RAG answering, sentiment.
 - **Firestore** stores the knowledge base, sessions, tickets and RAG vectors; **Vertex AI Search** adds semantic retrieval.
 - **BigQuery** runs insights over ticket and conversation data.
 
-Differentiators: deterministic human handoff (`HANDOFF_TOKEN`), knowledge-gap detection, auto priority/SLA escalation, agent Copilot, LLM observability — 9 test suites green. All services are env-gated; zero-credential demos use local SQLite + lexical RAG.
+Differentiators: deterministic human handoff, knowledge-gap detection, auto priority/SLA escalation, agent Copilot, LLM observability, 9 test suites green. All services are env-gated; zero-credential demos use local SQLite + lexical RAG.
 
 ---
 
