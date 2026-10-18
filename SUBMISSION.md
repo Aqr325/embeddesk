@@ -12,7 +12,7 @@
 
 | # | 赛事要求 | 状态 | 交付物 |
 |---|---|---|---|
-| 1 | 演示文稿（按规定模板） | ✅ 已完成 | `EmbedDesk-AI-Builder-Cup.pptx`（**官方模板原位填充**，16 页结构保留，英文，含 Firebase/Firestore/Cloud Run/Gemini 与全部链接） |
+| 1 | 演示文稿（按规定模板） | ✅ 已完成 | `EmbedDesk-AI-Builder-Cup.pptx`（**官方模板原位填充**，16 页结构保留，英文，含 Firebase/Firestore/Cloud Run/Gemini 与全部链接）；**表单上传只收 PDF** → 已转 `EmbedDesk-AI-Builder-Cup.pdf`（16 页 / 0.82 MB，PowerPoint COM 导出，≤5MB 上限） |
 | 2 | 演示视频（实际运行） | ✅ 已完成 | `embeddesk-demo.mp4`（**3:29 / 209s，1080p**）——真机录制：真实后端 + 前端 + 知识库问答 + 管理后台七个功能页实走；场景对位解说、字幕烧录、BGM；时长符合 3–4 分钟要求 |
 | 3 | 已部署的实时原型链接 | 🟡 待部署回填 | 代码 100% 就绪；Cloud Shell 走 `firebase deploy`（DEPLOY_FIREBASE.md，Blaze 免费额度内 $0）；Cloud Run 路线见 DEPLOY_GCP.md |
 | 4 | 可访问的 GitHub 仓库 | ✅ 已完成 | 仓库已转公开（`private:false`），密钥扫描干净 |
