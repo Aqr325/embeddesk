@@ -1,6 +1,7 @@
 /** 管理员鉴权状态管理 —— 基于 React Context 的单例，避免多个组件各自持有独立 state 导致登录态不同步。
  *  令牌存于 localStorage，自动处理过期与角色解析。 */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { API_BASE } from '../lib/apiBase';
 
 const TOKEN_KEY = 'csa_admin_token';
 
@@ -72,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [username, setUsername] = useState<string | null>(() => parseToken(loadInitialToken())?.sub ?? null);
 
   const login = useCallback(async (usernameInput: string, password: string) => {
-    const res = await fetch('/api/admin/login', {
+    const res = await fetch(API_BASE + '/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: usernameInput, password }),

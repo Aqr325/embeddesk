@@ -7,6 +7,7 @@
  */
 import { useState } from 'react';
 import { Cpu, AlertTriangle, CheckCircle2, Radio, Ticket as TicketIcon, Loader2, Zap } from 'lucide-react';
+import { API_BASE } from '../lib/apiBase';
 import type { DeviceTelemetry } from '../types';
 
 interface TelemetryData {
@@ -42,7 +43,7 @@ export function TelemetryPanel({ data, onMutate }: { data: TelemetryData; onMuta
         online: true,
         uptimeSec: 3600 + Math.floor(Math.random() * 7200),
       };
-      await fetch('/api/telemetry', {
+      await fetch(API_BASE + '/api/telemetry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId, product, snapshot }),

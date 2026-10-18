@@ -21,6 +21,7 @@
   var COLOR = (script && script.getAttribute('data-color')) || '#1e3a8a';
   var TITLE = (script && script.getAttribute('data-title')) || '在线客服';
   var SERVER = (script && script.getAttribute('data-server')) ||
+    window.EMBEDDESK_API_SERVER ||
     (script ? new URL(script.src).origin : '');
 
   if (!SITE_ID || !TOKEN) {

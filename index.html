@@ -16,6 +16,13 @@
 </head>
 <body>
   <div id="root"></div>
+  <script>
+    /* 混合部署：Firebase Hosting 前端 + 独立 API 后端时，构建期注入 VITE_API_BASE，
+       embed.js 读取此全局把 widget 请求指向真实 API（未注入则为空串，走同源默认）。
+       注意：Vite 未定义该 env 时会原样保留 %VITE_API_BASE% 字面量，需兜底清空。 */
+    window.EMBEDDESK_API_SERVER = "%VITE_API_BASE%";
+    if (/%VITE/.test(window.EMBEDDESK_API_SERVER || '')) window.EMBEDDESK_API_SERVER = '';
+  </script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

@@ -22,7 +22,14 @@ import type {
   RootCauseData,
 } from '../types';
 
-const BASE = '/api';
+/**
+ * API 基址。
+ * - 默认相对路径（同源部署：Cloud Run / Firebase Functions / 本地）
+ * - 设 VITE_API_BASE 后走绝对地址（混合部署：Firebase Hosting 前端 + Render API，
+ *   本地 dev 经 vite.config.ts 的 proxy 保持相对路径不变）
+ */
+const RAW_BASE: string = (import.meta.env.VITE_API_BASE as string) || '/api';
+const BASE = RAW_BASE.replace(/\/+$/, '');
 const TOKEN_KEY = 'csa_admin_token';
 
 function getToken(): string | null {

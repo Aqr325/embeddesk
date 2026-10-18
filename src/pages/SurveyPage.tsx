@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Star, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { API_BASE } from '../lib/apiBase';
 
 type MetaStatus = 'pending' | 'completed' | 'expired' | 'notfound' | 'loading' | 'error';
 
@@ -44,7 +45,7 @@ export function SurveyPage() {
     if (rating < 1) return;
     setSubmitting(true);
     try {
-      const res = await fetch('/api/csat/submit', {
+      const res = await fetch(API_BASE + '/api/csat/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, rating, comment: comment.slice(0, 1000), tags: tags.join(',') }),

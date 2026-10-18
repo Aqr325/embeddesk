@@ -4,6 +4,7 @@
  *   init -> analysis -> (handoff) -> text* -> (notice) -> done
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { API_BASE } from '../lib/apiBase';
 import { api, type SessionDTO } from './useApi';
 import type { AppMeta, ChatMessage, IntentId, TurnAnalysis, HandoffInfo, AgentTrace } from '../types';
 
@@ -173,7 +174,7 @@ export function useChat() {
       };
 
       try {
-        const res = await fetch('/api/chat', {
+        const res = await fetch(API_BASE + '/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
