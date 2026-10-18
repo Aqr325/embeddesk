@@ -2,7 +2,7 @@
 
 > **赛道**：Future of Work & Enterprise Productivity
 > **仓库**：https://github.com/Aqr325/embeddesk （分支 `hack2skill`，**已转公开 ✅** `private:false`）
-> **实时原型**：`<Firebase URL — Cloud Shell 部署中（DEPLOY_FIREBASE.md：Hosting + Cloud Functions，Blaze 免费额度内 $0），升 Blaze 后 firebase deploy 回填>`
+> **实时原型**：**https://embeddesk.web.app** ✅ 已上线——Firebase Hosting（Spark 免卡）承载 SPA + widget；API 为同仓库 Docker 镜像跑 Render 免费层（https://embeddesk-api.onrender.com）。Blaze 预付款风控下的零绑卡等价部署（详见 DEPLOY_HYBRID.md），CORS 已放行，health / chat SSE / admin / widget 全链路实测通过
 > **演示视频**：**https://youtu.be/N7_jOGu725s**（YouTube 不公开，`embeddesk-demo.mp4`，**3 分 29 秒 / 209s，1920×1080，已合规**）——本地启动真实服务（Express 8912 + Vite 5891 + SQLite 知识库），Playwright 无头 Chrome 驱动真实交互全程真机录制：widget 两轮产品问答 → 管理后台仪表盘 / 对话记录 / 工单 / 知识库 / 知识盲区 / AI 成效 / 模型配置七页实走；解说按配音逐句显示（不遮挡画面）+ 烧录字幕 + BGM。另备 `embeddesk_intro.mp4`（make-video 技能生成，53s）作补充
 > **演示文稿**：`EmbedDesk-AI-Builder-Cup.pptx`（🔴 已替换为**官方模板原位填充版**——16 页模板结构全保留，英文内容，第 9 页明确 Firebase/Firestore/Cloud Run/Gemini，第 14 页填仓库/视频/产品链接）
 
@@ -12,9 +12,9 @@
 
 | # | 赛事要求 | 状态 | 交付物 |
 |---|---|---|---|
-| 1 | 演示文稿（按规定模板） | ✅ 已完成 | `EmbedDesk-AI-Builder-Cup.pptx`（**官方模板原位填充**，16 页结构保留，英文，含 Firebase/Firestore/Cloud Run/Gemini 与全部链接）；**表单上传只收 PDF** → 已转 `EmbedDesk-AI-Builder-Cup.pdf`（16 页 / 0.82 MB，PowerPoint COM 导出，≤5MB 上限；第 14 页已填仓库 + 视频链接 youtu.be/N7_jOGu725s） |
+| 1 | 演示文稿（按规定模板） | ✅ 已完成 | `EmbedDesk-AI-Builder-Cup.pptx`（**官方模板原位填充**，16 页结构保留，英文，含 Firebase/Firestore/Cloud Run/Gemini 与全部链接）；**表单上传只收 PDF** → 已转 `EmbedDesk-AI-Builder-Cup.pdf`（16 页 / 0.82 MB，PowerPoint COM 导出，≤5MB 上限；第 14 页已填仓库 + 视频链接 youtu.be/N7_jOGu725s + 产品链接 embeddesk.web.app） |
 | 2 | 演示视频（实际运行） | ✅ 已完成 | **https://youtu.be/N7_jOGu725s**（YouTube 不公开链接，`embeddesk-demo.mp4`，**3:29 / 209s，1080p**）——真机录制：真实后端 + 前端 + 知识库问答 + 管理后台七个功能页实走；场景对位解说、字幕烧录、BGM；时长符合 3–4 分钟要求。**口径修订版**：全片去除制作方水印；场景 01 正文与场景 02 字幕改为「同一套 serverless 代码跑 Firebase Cloud Functions 或 Cloud Run + 零凭证本地 RAG 降级」；结尾卡部署声明由 Cloud Run 改为 **Google Cloud (Firebase)**，与真实部署一致 |
-| 3 | 已部署的实时原型链接 | 🟡 待部署回填 | 代码 100% 就绪；Cloud Shell 走 `firebase deploy`（DEPLOY_FIREBASE.md，Blaze 免费额度内 $0）；Cloud Run 路线见 DEPLOY_GCP.md |
+| 3 | 已部署的实时原型链接 | ✅ 已完成 | **https://embeddesk.web.app**（Firebase Hosting，Spark 免卡）+ API https://embeddesk-api.onrender.com（Render 免费层 Docker，同仓库镜像）；零绑卡；CORS 放行；health / chat SSE / admin / widget 实测通过。无 GEMINI_API_KEY 时知识库直答降级，演示不中断；Cloud Run 路线见 DEPLOY_GCP.md |
 | 4 | 可访问的 GitHub 仓库 | ✅ 已完成 | 仓库已转公开（`private:false`），密钥扫描干净 |
 | 5 | 简要描述 | ✅ 已完成 | 本文档 |
 
@@ -22,23 +22,23 @@
 
 ## 〇-2. Brief Description (English — paste-ready for the submission form)
 
-> **表单上限 1024 字符 → 本版 985 字符**（留 39 余量吸收聊天复制损耗；1022 版实测粘贴后变 1038 被截断，勿用）。以下为表单粘贴版；完整长文见「三、结构化完整版」。
+> **表单上限 1024 字符 → 本版 997 字符**（留 27 余量吸收聊天复制损耗；1022 版实测粘贴后变 1038 被截断，勿用）。以下为表单粘贴版；完整长文见「三、结构化完整版」。
 
-I built EmbedDesk, an embeddable AI customer-service agent that embeds into any website with one line of code. A single `<script>` tag (Shadow DOM) mounts a widget; the same agent core serves email (IMAP+SMTP) and IM and files tickets automatically.
+EmbedDesk is an embeddable AI customer-service agent for any website, one line of code. One `<script>` tag (Shadow DOM) mounts a widget; the same core serves email (IMAP+SMTP) and IM, auto-filing tickets.
 
 Google services used:
-- **Firebase Cloud Functions** host the full stack (React SPA + Express API) as the deployed prototype; the same code also runs on **Cloud Run**, one serverless codebase.
-- **Gemini** powers the agent core: tool-use loop (`search_knowledge` / `query_order` / `get_customer` / `create_ticket`), RAG answering, sentiment.
-- **Firestore** stores the knowledge base, sessions, tickets and RAG vectors; **Vertex AI Search** adds semantic retrieval.
-- **BigQuery** runs insights over ticket and conversation data.
+- **Firebase Hosting** serves the deployed prototype at embeddesk.web.app; the API runs the same repo's Docker image on Render (free tier). The same serverless codebase also runs on **Cloud Run** or **Cloud Functions**.
+- **Gemini** powers the agent: tool-use loop (`search_knowledge` / `query_order` / `get_customer` / `create_ticket`), RAG answering, sentiment.
+- **Firestore** stores knowledge, sessions, tickets, RAG vectors; **Vertex AI Search** for semantic retrieval.
+- **BigQuery** runs insights over tickets and conversations.
 
-Differentiators: deterministic human handoff, knowledge-gap detection, auto priority/SLA escalation, agent Copilot, LLM observability, 9 test suites green. All services are env-gated; zero-credential demos use local SQLite + lexical RAG.
+Differentiators: deterministic human handoff, knowledge-gap detection, auto priority/SLA escalation, agent Copilot, LLM observability, 9 suites green. All services are env-gated; zero-credential demos use local SQLite + lexical RAG.
 
 ---
 
 ## 一、表单用简短版（约 200 字，可直接粘贴）
 
-EmbedDesk（云嵌）是一个一行代码即可嵌入企业官网的 AI 客服 Agent，整套构建在 Google Cloud 上：Vertex AI（Gemini）负责对话与工具调用，Vertex AI Search 做企业知识检索，Firestore 持久化工单与会话，BigQuery 沉淀洞察事件流，服务端以无服务器方式部署（Cloud Run 容器或 Firebase Cloud Functions，同一份代码双模式，演示原型运行在 Firebase）。它面向工业设备厂商的真实痛点——专家问题应答慢、购买意图无人跟进：一段 `<script>`（Shadow DOM 隔离，不影响宿主页面）即可把客服能力带到任意网站，基于 16 款真实产品资料作答并附引用，识别购买意图后自动建单并通知销售，首响时间从 2 小时降到 30 秒。系统还内置情感识别与智能升级、RAG 检索增强、坐席 Copilot、工作流自动化与多渠道接入（网页 / 嵌入挂件 / IM / 邮件），且全链路带本地降级，无凭证环境也能完整演示。
+EmbedDesk（云嵌）是一个一行代码即可嵌入企业官网的 AI 客服 Agent，整套构建在 Google Cloud 上：Vertex AI（Gemini）负责对话与工具调用，Vertex AI Search 做企业知识检索，Firestore 持久化工单与会话，BigQuery 沉淀洞察事件流，服务端以无服务器方式部署（Cloud Run 容器或 Firebase Cloud Functions 同一份代码双模式；演示原型为零绑卡混合部署：Firebase Hosting 前端 + Render API）。它面向工业设备厂商的真实痛点——专家问题应答慢、购买意图无人跟进：一段 `<script>`（Shadow DOM 隔离，不影响宿主页面）即可把客服能力带到任意网站，基于 16 款真实产品资料作答并附引用，识别购买意图后自动建单并通知销售，首响时间从 2 小时降到 30 秒。系统还内置情感识别与智能升级、RAG 检索增强、坐席 Copilot、工作流自动化与多渠道接入（网页 / 嵌入挂件 / IM / 邮件），且全链路带本地降级，无凭证环境也能完整演示。
 
 ---
 
@@ -78,7 +78,7 @@ EmbedDesk 是一个**嵌入式 AI 客服 Agent**：一段 `<script>` 标签以 S
 
 | 资源 | 角色 |
 |---|---|
-| **Google Cloud serverless**（Cloud Run / Firebase Cloud Functions） | 托管完整 Express 服务——同一代码双模式：容器 `app.listen(PORT)` 或函数 `onRequest(app)`；部署原型运行在 Firebase |
+| **Google Cloud serverless**（Cloud Run / Firebase Cloud Functions） | 托管完整 Express 服务——同一代码双模式：容器 `app.listen(PORT)` 或函数 `onRequest(app)`；**本次实际部署**：Firebase Hosting（SPA + widget，embeddesk.web.app）+ Render 免费层（API，同仓库 Docker 镜像，embeddesk-api.onrender.com），零绑卡；设云凭证即切 Cloud Run / Functions，零改码 |
 | **Vertex AI（Gemini）** | 对话主模型 + function calling（≤5 轮工具循环、参数自修复） |
 | **Vertex AI Search** | 企业知识检索（16 份产品资料经 Document AI 解析入库） |
 | **Firestore** | 工单 / 会话持久化（Native mode） |
@@ -103,6 +103,9 @@ npm install && npm run verify
 #   见 DEPLOY_FIREBASE.md —— Cloud Shell 全程约 8 分钟
 npm ci && npm run build && npm run build:functions
 firebase login --no-localhost && firebase deploy
+
+# 零绑卡混合部署（本次提交实际采用）：Firebase Hosting + Render API，无需信用卡
+#   见 DEPLOY_HYBRID.md —— 全程约 25 分钟
 
 # 或部署到 Cloud Run（真实 GCP 栈，需绑卡）
 gcloud builds submit --config cloudbuild.yaml .
