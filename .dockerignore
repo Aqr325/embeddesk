@@ -10,3 +10,19 @@ logs
 !.env.example
 *.timestamp-*.mjs
 .DS_Store
+# --- submission artifacts & recording intermediates (never needed in image) ---
+.video-live
+.video-demo
+.video-*
+vidcap_shots
+work
+frames
+*.mp4
+*.mp3
+*.wav
+*.m4a
+*.pptx
+/*.png
+/*.jpg
+.cache
+.temp
